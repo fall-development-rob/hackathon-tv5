@@ -5,8 +5,7 @@
   "description": "AI-powered media discovery platform solving the 45-minute decision problem",
   "type": "module",
   "workspaces": [
-    "packages/@media-gateway/*",
-    "apps/*"
+    "packages/@media-gateway/*"
   ],
   "scripts": {
     "build": "turbo build",
