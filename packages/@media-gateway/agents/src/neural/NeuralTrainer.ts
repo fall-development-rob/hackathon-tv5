@@ -295,6 +295,22 @@ export class NeuralTrainer {
     };
   }
 
+  /**
+   * Track a pattern (stub for Q-learning integration)
+   */
+  async trackPattern(patternType: string, data: any): Promise<void> {
+    // Pattern tracking stub for Q-learning integration
+    console.log(`📊 Tracking ${patternType} pattern`, data);
+  }
+
+  /**
+   * Train a pattern (stub for Q-learning integration)
+   */
+  async trainPattern(patternType: string, data: any[]): Promise<void> {
+    // Pattern training stub for Q-learning integration
+    console.log(`🎯 Training ${patternType} with ${data.length} samples`);
+  }
+
   private createEmptyResult(patternType: PatternType): TrainingResult {
     return {
       patternType,
