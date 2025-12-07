@@ -2011,7 +2011,57 @@ development:
 
 ---
 
-## 7. IMPLEMENTATION ROADMAP
+## 7. HACKATHON COMPLIANCE REQUIREMENTS
+
+### 7.1 Track Alignment
+
+This implementation targets **THREE** hackathon tracks:
+
+| Track | Alignment | Key Features |
+|-------|-----------|--------------|
+| Entertainment Discovery | PRIMARY (10/10) | Solves 45-min problem with semantic search, group consensus |
+| Multi-Agent Systems | STRONG (9.5/10) | 4 agents + SwarmCoordinator with Google ADK |
+| Agentic Workflows | GOOD (8.5/10) | Autonomous intent routing, preference learning |
+
+### 7.2 Required Tool Integration
+
+#### Google Cloud Integration (REQUIRED)
+- **Google Gemini 2.0 Flash**: Natural language understanding in DiscoveryAgent
+- **Vertex AI Embeddings**: text-embedding-004 for 768-dim vectors
+- **@ai-sdk/google**: Vercel AI SDK with Google provider
+
+#### Existing Tool Integration
+- **AgentDB**: ReasoningBank, ReflexionMemory, SkillLibrary
+- **RuVector**: 768-dimensional vector embeddings
+- **Claude Flow**: Swarm orchestration patterns
+
+### 7.3 ARW Specification Compliance
+
+Must implement ARW 0.1 specification:
+
+1. **Manifest** at `/.well-known/arw-manifest.json`
+2. **Machine Views**:
+   - `/llms/home.llm.md` - Homepage for agents
+   - `/llms/search.llm.md` - Search interface
+   - `/llms/discover.llm.md` - Browse interface
+3. **Actions**:
+   - `semantic_search` - POST /api/search
+   - `get_recommendations` - POST /api/recommendations
+   - `discover_content` - GET /api/discover
+
+### 7.4 Success Metrics
+
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| Decision time reduction | 45min → <5min | User testing |
+| Recommendation accuracy | >80% | Click-through rate |
+| Group consensus time | <2min | Session analytics |
+| ARW compliance | 100% | Validator tool |
+| Multi-agent coordination | <500ms | Latency metrics |
+
+---
+
+## 8. IMPLEMENTATION ROADMAP
 
 ### Phase 1: Foundation (Months 1-3)
 
@@ -2202,9 +2252,9 @@ success_metrics:
 
 ---
 
-## 8. RISK ANALYSIS
+## 9. RISK ANALYSIS
 
-### 8.1 Technical Risks
+### 9.1 Technical Risks
 
 **Risk 1: Platform Access Restrictions**
 ```yaml
@@ -2263,7 +2313,7 @@ contingency:
   - horizontal_scaling: add more servers
 ```
 
-### 8.2 Business Risks
+### 9.2 Business Risks
 
 **Risk 4: Competitive Response**
 ```yaml
@@ -2325,7 +2375,7 @@ targets:
   - ltv_cac_ratio: >7:1
 ```
 
-### 8.3 Legal & Regulatory Risks
+### 9.3 Legal & Regulatory Risks
 
 **Risk 7: Data Privacy Regulations**
 ```yaml
@@ -2368,9 +2418,9 @@ safeguards:
 
 ---
 
-## 9. VALIDATION PLAN
+## 10. VALIDATION PLAN
 
-### 9.1 Specification Review Checklist
+### 10.1 Specification Review Checklist
 
 ```yaml
 completeness:
@@ -2404,7 +2454,7 @@ alignment:
   - [ ] Creates defensible advantages
 ```
 
-### 9.2 Stakeholder Approval
+### 10.2 Stakeholder Approval
 
 ```yaml
 technical_review:
@@ -2429,7 +2479,7 @@ legal_review:
   timeline: "Week 2"
 ```
 
-### 9.3 Success Criteria
+### 10.3 Success Criteria
 
 **Specification is Complete When:**
 1. All sections filled with specific, measurable details
@@ -2443,9 +2493,9 @@ legal_review:
 
 ---
 
-## 10. APPENDIX
+## 11. APPENDIX
 
-### 10.1 Glossary
+### 11.1 Glossary
 
 ```yaml
 terms:
@@ -2461,7 +2511,7 @@ terms:
   Vector Embedding: "High-dimensional representation of content/user for AI"
 ```
 
-### 10.2 References
+### 11.2 References
 
 ```yaml
 market_research:
@@ -2488,7 +2538,7 @@ frameworks:
   - "Turborepo Monorepo Guide"
 ```
 
-### 10.3 Document Version History
+### 11.3 Document Version History
 
 ```yaml
 v1.0.0:
