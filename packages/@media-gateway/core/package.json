@@ -13,13 +13,21 @@
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },
+  "bin": {
+    "media-gateway-mcp": "./dist/mcp/media-gateway-mcp-server.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/media-gateway-mcp-server.d.ts",
+      "import": "./dist/mcp/media-gateway-mcp-server.js"
     }
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "bcrypt": "^5.1.1",
     "jsonwebtoken": "^9.0.3",
     "zod": "^3.23.0"

@@ -40,3 +40,12 @@ export {
   updatePreferenceVectorJS,
   batchSimilarityJS,
 } from './services/AgentDBVectorService.js';
+
+// MCP Server Configuration
+export {
+  MCP_TOOLS,
+  MCP_CONFIG,
+  MCP_SERVER_PATH,
+  getClaudeDesktopConfig,
+  type MCPToolName,
+} from './mcp/index.js';
