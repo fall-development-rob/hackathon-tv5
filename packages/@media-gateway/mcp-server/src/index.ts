@@ -141,12 +141,34 @@ async function startSSETransport(server: MCPServer, port: number = 3100): Promis
 }
 
 /**
+ * Database wrapper interface for SwarmCoordinator
+ */
+interface DatabaseWrapper {
+  query(sql: string, params: any[]): Promise<any[]>;
+  execute(sql: string, params: any[]): Promise<{ affectedRows: number }>;
+}
+
+/**
+ * Vector wrapper interface for SwarmCoordinator
+ */
+interface VectorWrapper {
+  generateEmbedding(text: string): Promise<Float32Array>;
+  searchByEmbedding(
+    embedding: Float32Array,
+    limit: number,
+    threshold: number,
+    filters?: any
+  ): Promise<any[]>;
+  insertContent(content: { title: string; [key: string]: any }): Promise<boolean>;
+}
+
+/**
  * Initialize SwarmCoordinator with mock wrappers
  * In production, these would be real database/vector instances
  */
-function createMockWrappers() {
+function createMockWrappers(): { dbWrapper: DatabaseWrapper; vectorWrapper: VectorWrapper } {
   // Mock database wrapper
-  const dbWrapper = {
+  const dbWrapper: DatabaseWrapper = {
     query: async (sql: string, params: any[]) => {
       console.error('[Mock DB] Query:', sql);
       return [];
@@ -158,7 +180,7 @@ function createMockWrappers() {
   };
 
   // Mock vector wrapper
-  const vectorWrapper = {
+  const vectorWrapper: VectorWrapper = {
     generateEmbedding: async (text: string) => {
       console.error('[Mock Vector] Generating embedding for:', text);
       return new Float32Array(384).fill(0.1);
@@ -167,7 +189,7 @@ function createMockWrappers() {
       console.error('[Mock Vector] Searching with filters:', filters);
       return [];
     },
-    insertContent: async (content: any) => {
+    insertContent: async (content: { title: string; [key: string]: any }) => {
       console.error('[Mock Vector] Inserting content:', content.title);
       return true;
     }
