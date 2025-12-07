@@ -77,6 +77,13 @@ export {
   type CacheAdapter,
 } from './learning/AgentDBCacheAdapter.js';
 
+// AgentDB Embedding Adapter (10-50x faster similarity, HNSW indexing)
+export {
+  AgentDBEmbeddingAdapter,
+  createAgentDBEmbeddingGenerator,
+  createContentEmbeddingGeneratorWithAgentDBCache,
+} from './learning/AgentDBEmbeddingAdapter.js';
+
 // LoRA Personalization
 export {
   LoRAPersonalizationEngine,
@@ -210,6 +217,17 @@ export {
 // For AgentDB QueryCache integration (20-40% speedup):
 //   import { createAgentDBCache, isAgentDBAvailable } from '@media-gateway/agents';
 //   const cache = createAgentDBCache<number[]>(1000); // Auto-fallback to LRUCache
+//
+// For AgentDB Embedding Adapter (10-50x faster similarity + HNSW):
+//   import { createAgentDBEmbeddingGenerator } from '@media-gateway/agents';
+//   const generator = createAgentDBEmbeddingGenerator({
+//     cacheSize: 1000,
+//     weights: { genre: 0.30, type: 0.15, metadata: 0.25, keywords: 0.30 }
+//   });
+//   // Uses agentdb WASMVectorSearch for 10-50x faster cosine similarity
+//   // Uses agentdb QueryCache for 20-40% speedup on repeated queries
+//   // Supports HNSW indexing for 10-100x faster search
+//   // Falls back gracefully to ContentEmbeddingGenerator if agentdb unavailable
 //
 // Note: AgentDB controllers are imported directly from agentdb package.
 // See agentdb docs for: ReflexionMemory, SkillLibrary, CausalMemoryGraph,

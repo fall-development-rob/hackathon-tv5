@@ -30,3 +30,13 @@ export * from './services/UserPreferenceService.js';
 export * from './services/SemanticSearchService.js';
 export * from './services/GroupRecommendationService.js';
 export * from './services/AuthService.js';
+
+// AgentDB Vector Service (exports class and separate namespace to avoid conflicts)
+export {
+  AgentDBVectorService,
+  getDefaultVectorService,
+  cosineSimilarityJS,
+  normalizeVectorJS,
+  updatePreferenceVectorJS,
+  batchSimilarityJS,
+} from './services/AgentDBVectorService.js';

@@ -7,11 +7,58 @@
  * - ~10-40KB per adapter
  * - EWC++ regularization for anti-forgetting
  * - Support for thousands of adapters
+ * - Optional ReasoningBank integration for adaptive learning
  *
  * Algorithm: output = baseOutput + (scalingFactor / rank) * B @ A @ input
+ *
+ * ReasoningBank Integration:
+ * When enabled, stores each adapter training episode to learn from:
+ * - Similar user adaptation patterns
+ * - Gradient optimization strategies
+ * - Successful learning rate schedules
+ * - Anti-forgetting regularization hints
  */
 
 import type { WatchEvent, UserPreferences } from '@media-gateway/core';
+
+// ============================================================================
+// ReasoningBank Integration Types (Optional)
+// ============================================================================
+
+type ReasoningBankPattern = {
+  sessionId: string;
+  task: string;
+  input?: string;
+  output?: string;
+  critique?: string;
+  success: boolean;
+  reward: number;
+  latencyMs?: number;
+  tokensUsed?: number;
+};
+
+type ReasoningBankOptions = {
+  k?: number;
+  minReward?: number;
+  onlySuccesses?: boolean;
+  onlyFailures?: boolean;
+};
+
+type ReasoningBankInstance = {
+  storePattern(pattern: ReasoningBankPattern): Promise<number>;
+  retrievePatterns(query: string, options?: ReasoningBankOptions): Promise<any[]>;
+  learnStrategy(task: string): Promise<{
+    patterns: any[];
+    causality: any;
+    confidence: number;
+    recommendation: string;
+  }>;
+  autoConsolidate(
+    minUses?: number,
+    minSuccessRate?: number,
+    lookbackDays?: number
+  ): Promise<{ skillsCreated: number }>;
+};
 
 // ============================================================================
 // Types and Interfaces
@@ -82,6 +129,10 @@ export interface LoRAConfig {
   ewcLambda?: number;
   /** Gradient clipping threshold (default: 1.0) */
   gradientClipThreshold?: number;
+  /** Optional ReasoningBank instance for adaptive learning */
+  reasoningBank?: ReasoningBankInstance;
+  /** Enable ReasoningBank query caching (default: true) */
+  enableReasoningBankCache?: boolean;
 }
 
 /**
@@ -250,6 +301,17 @@ export class LoRAPersonalizationEngine {
   private readonly useEWC: boolean;
   private readonly ewcLambda: number;
   private readonly gradientClipThreshold: number;
+  private reasoningBank?: ReasoningBankInstance;
+  private readonly enableReasoningBankCache: boolean;
+  private readonly sessionId: string;
+
+  // ReasoningBank query cache for performance
+  private readonly reasoningBankCache = new Map<string, {
+    patterns: any[];
+    strategy: any;
+    timestamp: number;
+  }>();
+  private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   constructor(config: LoRAConfig = {}) {
     this.rank = config.rank ?? 4;
@@ -259,6 +321,34 @@ export class LoRAPersonalizationEngine {
     this.useEWC = config.useEWC !== false;
     this.ewcLambda = config.ewcLambda ?? 0.5;
     this.gradientClipThreshold = config.gradientClipThreshold ?? 1.0;
+    this.reasoningBank = config.reasoningBank;
+    this.enableReasoningBankCache = config.enableReasoningBankCache !== false;
+    this.sessionId = `lora-engine-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Connect or update the ReasoningBank instance
+   * Allows hot-swapping or late-binding of ReasoningBank
+   */
+  connectReasoningBank(bank: ReasoningBankInstance): void {
+    this.reasoningBank = bank;
+    console.log('✅ ReasoningBank connected to LoRA engine');
+  }
+
+  /**
+   * Disconnect ReasoningBank
+   */
+  disconnectReasoningBank(): void {
+    this.reasoningBank = undefined;
+    this.reasoningBankCache.clear();
+    console.log('🔌 ReasoningBank disconnected from LoRA engine');
+  }
+
+  /**
+   * Check if ReasoningBank is available
+   */
+  hasReasoningBank(): boolean {
+    return !!this.reasoningBank;
   }
 
   /**
@@ -316,13 +406,81 @@ export class LoRAPersonalizationEngine {
   /**
    * Update adapter based on feedback
    * Uses gradient descent with optional EWC++ regularization
+   *
+   * ReasoningBank Integration:
+   * - Queries for similar past adaptations before training
+   * - Applies learned optimization strategies
+   * - Stores training episode for future reference
    */
-  updateAdapter(
+  async updateAdapter(
     adapter: UserLoRAAdapter,
     feedback: AdapterFeedback[]
-  ): UserLoRAAdapter {
+  ): Promise<UserLoRAAdapter> {
     if (feedback.length === 0) {
       return adapter;
+    }
+
+    const startTime = performance.now();
+    let reasoningBankHints: {
+      suggestedLearningRate?: number;
+      suggestedClipThreshold?: number;
+      similarPatterns?: any[];
+    } = {};
+
+    // Query ReasoningBank for similar adaptation patterns (if available)
+    if (this.reasoningBank) {
+      try {
+        const taskDescription = `lora_adaptation_user_${adapter.userId}_rank_${adapter.rank}_samples_${feedback.length}`;
+        const cacheKey = `adaptation_${adapter.userId}_${feedback.length}`;
+
+        // Check cache first
+        let cachedData = this.enableReasoningBankCache
+          ? this.reasoningBankCache.get(cacheKey)
+          : undefined;
+
+        if (cachedData && (Date.now() - cachedData.timestamp) < this.CACHE_TTL_MS) {
+          console.log(`   📦 ReasoningBank: Using cached patterns (${cachedData.patterns.length} patterns)`);
+          reasoningBankHints.similarPatterns = cachedData.patterns;
+
+          // Apply strategy hints from cache
+          if (cachedData.strategy?.recommendation) {
+            const recommendations = cachedData.strategy.recommendation;
+            reasoningBankHints = this.parseReasoningBankHints(recommendations);
+          }
+        } else {
+          // Fetch from ReasoningBank
+          const [patterns, strategy] = await Promise.all([
+            this.reasoningBank.retrievePatterns(taskDescription, {
+              k: 5,
+              minReward: 0.7, // Only consider successful adaptations
+              onlySuccesses: true,
+            }),
+            this.reasoningBank.learnStrategy(taskDescription),
+          ]);
+
+          if (patterns.length > 0) {
+            console.log(`   🧠 ReasoningBank: Found ${patterns.length} similar adaptation patterns`);
+            reasoningBankHints.similarPatterns = patterns;
+
+            // Parse strategy recommendations
+            if (strategy.recommendation) {
+              console.log(`   💡 ReasoningBank: Strategy confidence ${(strategy.confidence * 100).toFixed(1)}%`);
+              reasoningBankHints = this.parseReasoningBankHints(strategy.recommendation);
+            }
+
+            // Cache results
+            if (this.enableReasoningBankCache) {
+              this.reasoningBankCache.set(cacheKey, {
+                patterns,
+                strategy,
+                timestamp: Date.now(),
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`   ⚠️ ReasoningBank query failed:`, error);
+      }
     }
 
     // Accumulate gradients from all feedback
@@ -402,19 +560,30 @@ export class LoRAPersonalizationEngine {
       }
     }
 
-    // Clip gradients
-    const clippedGradA = clipGradient(gradA, this.gradientClipThreshold);
-    const clippedGradB = clipGradient(gradB, this.gradientClipThreshold);
+    // Apply ReasoningBank hints to gradient clipping and learning rate
+    const effectiveLearningRate = reasoningBankHints.suggestedLearningRate ?? this.learningRate;
+    const effectiveClipThreshold = reasoningBankHints.suggestedClipThreshold ?? this.gradientClipThreshold;
 
-    // Update matrices with gradient descent
+    if (reasoningBankHints.suggestedLearningRate) {
+      console.log(`   📈 ReasoningBank: Adjusted learning rate to ${effectiveLearningRate.toFixed(4)}`);
+    }
+    if (reasoningBankHints.suggestedClipThreshold) {
+      console.log(`   ✂️ ReasoningBank: Adjusted clip threshold to ${effectiveClipThreshold.toFixed(2)}`);
+    }
+
+    // Clip gradients
+    const clippedGradA = clipGradient(gradA, effectiveClipThreshold);
+    const clippedGradB = clipGradient(gradB, effectiveClipThreshold);
+
+    // Update matrices with gradient descent (using ReasoningBank-adjusted learning rate)
     const newMatrixA = new Float32Array(adapter.matrixA.length);
     const newMatrixB = new Float32Array(adapter.matrixB.length);
 
     for (let i = 0; i < adapter.matrixA.length; i++) {
-      newMatrixA[i] = (adapter.matrixA[i] ?? 0) - this.learningRate * (clippedGradA[i] ?? 0);
+      newMatrixA[i] = (adapter.matrixA[i] ?? 0) - effectiveLearningRate * (clippedGradA[i] ?? 0);
     }
     for (let i = 0; i < adapter.matrixB.length; i++) {
-      newMatrixB[i] = (adapter.matrixB[i] ?? 0) - this.learningRate * (clippedGradB[i] ?? 0);
+      newMatrixB[i] = (adapter.matrixB[i] ?? 0) - effectiveLearningRate * (clippedGradB[i] ?? 0);
     }
 
     // Update Fisher information for EWC++ (diagonal approximation)
@@ -444,6 +613,7 @@ export class LoRAPersonalizationEngine {
 
     // Create updated adapter
     const avgLoss = totalLoss / batchSize;
+    const trainingTimeMs = performance.now() - startTime;
     const updatedAdapter: UserLoRAAdapter = {
       ...adapter,
       matrixA: newMatrixA,
@@ -456,8 +626,52 @@ export class LoRAPersonalizationEngine {
         totalSamples: adapter.metadata.totalSamples + batchSize,
         avgLoss: 0.9 * adapter.metadata.avgLoss + 0.1 * avgLoss,
         lastTrainedAt: new Date(),
+        learningRate: effectiveLearningRate,
       },
     };
+
+    // Store training episode to ReasoningBank (if available)
+    if (this.reasoningBank) {
+      try {
+        const success = avgLoss < 0.15; // Consider loss < 0.15 as successful
+        const reward = Math.max(0, 1 - avgLoss); // Convert loss to reward
+
+        const patternId = await this.reasoningBank.storePattern({
+          sessionId: this.sessionId,
+          task: `lora_adaptation_user_${adapter.userId}_rank_${adapter.rank}_samples_${feedback.length}`,
+          input: JSON.stringify({
+            userId: adapter.userId,
+            rank: adapter.rank,
+            embeddingDim: adapter.embeddingDim,
+            batchSize: feedback.length,
+            previousVersion: adapter.version,
+            previousLoss: adapter.metadata.avgLoss,
+            learningRate: effectiveLearningRate,
+            clipThreshold: effectiveClipThreshold,
+            useEWC: this.useEWC,
+            ewcLambda: this.ewcLambda,
+            reasoningBankHintsUsed: Object.keys(reasoningBankHints).length > 0,
+          }),
+          output: JSON.stringify({
+            newVersion: updatedAdapter.version,
+            avgLoss,
+            lossImprovement: adapter.metadata.avgLoss - avgLoss,
+            trainingTimeMs,
+            totalSamples: updatedAdapter.metadata.totalSamples,
+          }),
+          critique: success
+            ? `Successful adaptation: loss improved from ${adapter.metadata.avgLoss.toFixed(4)} to ${avgLoss.toFixed(4)}`
+            : `Adaptation needs improvement: loss ${avgLoss.toFixed(4)} still high`,
+          success,
+          reward,
+          latencyMs: trainingTimeMs,
+        });
+
+        console.log(`   💾 ReasoningBank: Stored adaptation episode #${patternId} (reward: ${reward.toFixed(2)})`);
+      } catch (error) {
+        console.warn(`   ⚠️ ReasoningBank: Failed to store adaptation episode:`, error);
+      }
+    }
 
     return updatedAdapter;
   }
@@ -761,7 +975,160 @@ export class LoRAPersonalizationEngine {
       useEWC: this.useEWC,
       ewcLambda: this.ewcLambda,
       gradientClipThreshold: this.gradientClipThreshold,
+      reasoningBank: this.reasoningBank,
+      enableReasoningBankCache: this.enableReasoningBankCache,
     };
+  }
+
+  /**
+   * Get ReasoningBank statistics
+   */
+  getReasoningBankStats(): {
+    enabled: boolean;
+    sessionId: string;
+    cacheSize: number;
+    cacheHitRate?: number;
+  } {
+    return {
+      enabled: !!this.reasoningBank,
+      sessionId: this.sessionId,
+      cacheSize: this.reasoningBankCache.size,
+    };
+  }
+
+  /**
+   * Clear ReasoningBank cache
+   */
+  clearReasoningBankCache(): void {
+    this.reasoningBankCache.clear();
+    console.log('🧹 ReasoningBank cache cleared');
+  }
+
+  /**
+   * Consolidate successful adaptation patterns into reusable skills
+   * Uses ReasoningBank's auto-consolidation feature
+   */
+  async consolidateAdaptationPatterns(
+    minSuccessRate: number = 0.85,
+    minUses: number = 5,
+    lookbackDays: number = 30
+  ): Promise<{ skillsCreated: number } | null> {
+    if (!this.reasoningBank) {
+      console.warn('⚠️ ReasoningBank not available - consolidation skipped');
+      return null;
+    }
+
+    console.log(`🔄 Consolidating LoRA Adaptation Patterns`);
+    console.log(`   Min Success Rate: ${(minSuccessRate * 100).toFixed(0)}%`);
+    console.log(`   Min Uses: ${minUses}`);
+    console.log(`   Lookback Days: ${lookbackDays}`);
+
+    try {
+      const result = await this.reasoningBank.autoConsolidate(
+        minUses,
+        minSuccessRate,
+        lookbackDays
+      );
+      console.log(`✅ Consolidation Complete`);
+      console.log(`   Reusable Adaptation Skills Created: ${result.skillsCreated}`);
+      return result;
+    } catch (error) {
+      console.error(`❌ Consolidation Failed:`, error);
+      return { skillsCreated: 0 };
+    }
+  }
+
+  /**
+   * Parse ReasoningBank recommendations into optimization hints
+   * Extracts learning rate, clip threshold, and other hyperparameter suggestions
+   */
+  private parseReasoningBankHints(recommendation: string): {
+    suggestedLearningRate?: number;
+    suggestedClipThreshold?: number;
+  } {
+    const hints: {
+      suggestedLearningRate?: number;
+      suggestedClipThreshold?: number;
+    } = {};
+
+    // Parse learning rate suggestions
+    const lrMatch = recommendation.match(/learning[_\s-]?rate[:\s]+([0-9.e-]+)/i);
+    if (lrMatch?.[1]) {
+      const suggestedLR = parseFloat(lrMatch[1]);
+      if (!isNaN(suggestedLR) && suggestedLR > 0 && suggestedLR < 1) {
+        hints.suggestedLearningRate = suggestedLR;
+      }
+    }
+
+    // Parse clip threshold suggestions
+    const clipMatch = recommendation.match(/clip[_\s-]?threshold[:\s]+([0-9.]+)/i);
+    if (clipMatch?.[1]) {
+      const suggestedClip = parseFloat(clipMatch[1]);
+      if (!isNaN(suggestedClip) && suggestedClip > 0) {
+        hints.suggestedClipThreshold = suggestedClip;
+      }
+    }
+
+    // Parse general optimization suggestions
+    if (recommendation.toLowerCase().includes('reduce learning rate')) {
+      hints.suggestedLearningRate = this.learningRate * 0.5;
+    } else if (recommendation.toLowerCase().includes('increase learning rate')) {
+      hints.suggestedLearningRate = this.learningRate * 1.5;
+    }
+
+    if (recommendation.toLowerCase().includes('increase gradient clipping')) {
+      hints.suggestedClipThreshold = this.gradientClipThreshold * 1.5;
+    } else if (recommendation.toLowerCase().includes('reduce gradient clipping')) {
+      hints.suggestedClipThreshold = this.gradientClipThreshold * 0.75;
+    }
+
+    return hints;
+  }
+
+  /**
+   * Retrieve similar successful adaptations from ReasoningBank
+   * Useful for transfer learning or cold-start scenarios
+   */
+  async getSimilarAdaptations(
+    userId: string,
+    topK: number = 5
+  ): Promise<Array<{
+    userId: string;
+    rank: number;
+    avgLoss: number;
+    reward: number;
+    learningRate: number;
+  }> | null> {
+    if (!this.reasoningBank) {
+      return null;
+    }
+
+    try {
+      const patterns = await this.reasoningBank.retrievePatterns(
+        `lora_adaptation_user_${userId}`,
+        {
+          k: topK,
+          minReward: 0.7,
+          onlySuccesses: true,
+        }
+      );
+
+      return patterns.map((p: any) => {
+        const input = p.input ? JSON.parse(p.input) : {};
+        const output = p.output ? JSON.parse(p.output) : {};
+
+        return {
+          userId: input.userId || userId,
+          rank: input.rank || this.rank,
+          avgLoss: output.avgLoss || 0,
+          reward: p.reward || 0,
+          learningRate: input.learningRate || this.learningRate,
+        };
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to retrieve similar adaptations:', error);
+      return null;
+    }
   }
 }
 
