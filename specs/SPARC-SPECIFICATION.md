@@ -2025,15 +2025,37 @@ This implementation targets **THREE** hackathon tracks:
 
 ### 7.2 Required Tool Integration
 
-#### Google Cloud Integration (REQUIRED)
-- **Google Gemini 2.0 Flash**: Natural language understanding in DiscoveryAgent
-- **Vertex AI Embeddings**: text-embedding-004 for 768-dim vectors
-- **@ai-sdk/google**: Vercel AI SDK with Google provider
+#### Google Cloud Integration (IMPLEMENTED ✅)
+- **Google Gemini 2.0 Flash**: ✅ Integrated in DiscoveryAgent.parseIntentWithAI()
+  - Direct REST API calls to generativelanguage.googleapis.com
+  - Structured prompt for intent classification
+  - Graceful fallback to regex on failure
+- **Vertex AI Embeddings**: ✅ Integrated in RuVectorWrapper.generateEmbeddingWithVertexAI()
+  - text-embedding-004 model for 768-dim vectors
+  - Fallback chain: Vertex AI → OpenAI → Mock
+- **@ai-sdk/google**: ✅ Package installed, pattern documented in DiscoveryAgent
 
-#### Existing Tool Integration
-- **AgentDB**: ReasoningBank, ReflexionMemory, SkillLibrary
-- **RuVector**: 768-dimensional vector embeddings
-- **Claude Flow**: Swarm orchestration patterns
+#### Claude Flow MCP Integration (IMPLEMENTED ✅)
+- **Swarm Orchestration**: ✅ SwarmCoordinator.initializeMCP()
+  - mcp__claude_flow__swarm_init pattern for topology setup
+  - mcp__claude_flow__agent_spawn pattern for agent coordination
+- **Task Orchestration**: ✅ SwarmCoordinator.executeWithMCP()
+  - mcp__claude_flow__task_orchestrate pattern for parallel execution
+- **Memory Coordination**: ✅ SwarmCoordinator memory methods
+  - mcp__claude_flow__memory_usage pattern for cross-agent state
+
+#### Neural Training Integration (IMPLEMENTED ✅)
+- **Pattern Training**: ✅ NeuralTrainer.trainFromWatchHistory()
+  - mcp__claude_flow__neural_train pattern for user preference learning
+- **Pattern Analysis**: ✅ NeuralTrainer.analyzePatterns()
+  - mcp__claude_flow__neural_patterns for cognitive analysis
+- **Prediction**: ✅ NeuralTrainer.predictPreferences()
+  - Context-aware preference prediction
+
+#### Database & Vector Integration (IMPLEMENTED ✅)
+- **AgentDB**: ✅ Full ReasoningBank, ReflexionMemory, SkillLibrary
+- **RuVector**: ✅ 768-dim vector embeddings with semantic search
+- **Data Moat**: ✅ Cross-platform matching, social connection tracking
 
 ### 7.3 ARW Specification Compliance
 
@@ -2058,6 +2080,116 @@ Must implement ARW 0.1 specification:
 | Group consensus time | <2min | Session analytics |
 | ARW compliance | 100% | Validator tool |
 | Multi-agent coordination | <500ms | Latency metrics |
+
+### 7.5 Tool Integration Architecture
+
+#### AI-Powered Intent Parsing Pipeline
+
+```
+User Query → DiscoveryAgent
+                ↓
+         parseIntentWithAI()
+                ↓
+    ┌──────────────────────────┐
+    │   Google Gemini 2.0      │
+    │   gemini-2.0-flash-exp   │
+    │   (Primary NLU Engine)   │
+    └──────────────────────────┘
+                ↓ (fallback)
+    ┌──────────────────────────┐
+    │   Vercel AI SDK          │
+    │   @ai-sdk/google         │
+    │   (Alternative Pattern)  │
+    └──────────────────────────┘
+                ↓ (fallback)
+    ┌──────────────────────────┐
+    │   Regex Pattern Match    │
+    │   (Guaranteed Fallback)  │
+    └──────────────────────────┘
+                ↓
+         AgentIntent
+```
+
+#### Multi-Agent MCP Orchestration
+
+```
+SwarmCoordinator.executeWithMCP()
+         ↓
+┌─────────────────────────────────────┐
+│     mcp__claude_flow__swarm_init    │
+│     Topology: hierarchical/mesh     │
+└─────────────────────────────────────┘
+         ↓
+┌─────────────────────────────────────┐
+│    mcp__claude_flow__agent_spawn    │
+│    4 Specialized Agents:            │
+│    - DiscoveryAgent (researcher)    │
+│    - PreferenceAgent (analyst)      │
+│    - SocialAgent (coordinator)      │
+│    - ProviderAgent (optimizer)      │
+└─────────────────────────────────────┘
+         ↓
+┌─────────────────────────────────────┐
+│  mcp__claude_flow__task_orchestrate │
+│  Strategy: parallel/adaptive        │
+│  Priority: low/medium/high/critical │
+└─────────────────────────────────────┘
+         ↓
+┌─────────────────────────────────────┐
+│   mcp__claude_flow__memory_usage    │
+│   Namespace: media-gateway          │
+│   Cross-agent state coordination    │
+└─────────────────────────────────────┘
+```
+
+#### Neural Learning Pipeline
+
+```
+User Interaction → NeuralTrainer
+         ↓
+┌─────────────────────────────────────┐
+│   mcp__claude_flow__neural_train    │
+│   Pattern Types:                    │
+│   - coordination (agent collab)     │
+│   - optimization (resource mgmt)    │
+│   - prediction (user prefs)         │
+└─────────────────────────────────────┘
+         ↓
+┌─────────────────────────────────────┐
+│  mcp__claude_flow__neural_patterns  │
+│  Actions: analyze/learn/predict     │
+│  Continuous improvement loop        │
+└─────────────────────────────────────┘
+         ↓
+      AgentDB
+   Pattern Storage
+```
+
+#### Embedding Generation Pipeline
+
+```
+Content/Query → RuVectorWrapper
+         ↓
+┌─────────────────────────────────────┐
+│   Google Vertex AI (Primary)        │
+│   text-embedding-004                │
+│   768 dimensions                    │
+└─────────────────────────────────────┘
+         ↓ (fallback)
+┌─────────────────────────────────────┐
+│   OpenAI API (Secondary)            │
+│   text-embedding-3-small            │
+│   768 dimensions                    │
+└─────────────────────────────────────┘
+         ↓ (fallback)
+┌─────────────────────────────────────┐
+│   Mock Embeddings (Testing)         │
+│   Deterministic hash-based          │
+└─────────────────────────────────────┘
+         ↓
+      RuVector Database
+   Semantic Search Index
+```
 
 ---
 
