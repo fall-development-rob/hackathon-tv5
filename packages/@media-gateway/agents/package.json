@@ -1,0 +1,62 @@
+{
+  "name": "@media-gateway/agents",
+  "version": "0.1.0",
+  "description": "Multi-agent system for media discovery using Google ADK and Claude Flow orchestration",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./discovery": {
+      "types": "./dist/agents/DiscoveryAgent.d.ts",
+      "import": "./dist/agents/DiscoveryAgent.js"
+    },
+    "./preference": {
+      "types": "./dist/agents/PreferenceAgent.d.ts",
+      "import": "./dist/agents/PreferenceAgent.js"
+    },
+    "./social": {
+      "types": "./dist/agents/SocialAgent.d.ts",
+      "import": "./dist/agents/SocialAgent.js"
+    },
+    "./provider": {
+      "types": "./dist/agents/ProviderAgent.d.ts",
+      "import": "./dist/agents/ProviderAgent.js"
+    }
+  },
+  "dependencies": {
+    "@media-gateway/core": "workspace:*",
+    "@media-gateway/database": "workspace:*",
+    "@ai-sdk/google": "^1.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "ai": "^4.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "multi-agent",
+    "google-adk",
+    "claude-flow",
+    "discovery-agent",
+    "agentic-ai"
+  ],
+  "license": "Apache-2.0"
+}
