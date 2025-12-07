@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "agentdb": "^2.0.0-alpha.2.18",
     "bcrypt": "^5.1.1",
     "jsonwebtoken": "^9.0.3",
     "zod": "^3.23.0"

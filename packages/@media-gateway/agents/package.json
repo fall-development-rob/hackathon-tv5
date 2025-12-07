@@ -40,8 +40,8 @@
     "@media-gateway/database": "workspace:*",
     "@ai-sdk/google": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
-    "agentdb": "workspace:*",
-    "agentic-flow": "workspace:*",
+    "agentdb": "^2.0.0-alpha.2.18",
+    "agentic-flow": "^1.10.2",
     "ai": "^4.0.0",
     "zod": "^3.23.0"
   },

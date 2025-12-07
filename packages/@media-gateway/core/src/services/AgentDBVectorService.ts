@@ -13,7 +13,31 @@
  * - Vector normalization with numerical stability
  */
 
-import { WASMVectorSearch } from '../../../../../apps/agentdb/src/controllers/WASMVectorSearch.js';
+// Dynamic import for WASMVectorSearch to handle optional dependency
+// The WASMVectorSearch is exported from agentdb/controllers/WASMVectorSearch
+type WASMVectorSearchType = {
+  new (db: any, options?: { enableWASM?: boolean; enableSIMD?: boolean; batchSize?: number }): {
+    cosineSimilarity(a: Float32Array, b: Float32Array): number;
+    batchSimilarity(query: Float32Array, vectors: Float32Array[]): number[];
+    getStats(): { wasmAvailable: boolean; simdAvailable: boolean };
+  };
+};
+
+// Lazy import to avoid bundling issues and TypeScript module resolution
+let WASMVectorSearch: WASMVectorSearchType | null = null;
+async function getWASMVectorSearch(): Promise<WASMVectorSearchType | null> {
+  if (WASMVectorSearch !== null) return WASMVectorSearch;
+  try {
+    // Use string literal to bypass TypeScript module resolution
+    const modulePath = 'agentdb/controllers/WASMVectorSearch';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const module = await Function('m', 'return import(m)')(modulePath) as any;
+    WASMVectorSearch = module.WASMVectorSearch;
+    return WASMVectorSearch;
+  } catch {
+    return null;
+  }
+}
 
 // Fallback implementations (pure JavaScript with loop unrolling)
 
@@ -151,10 +175,17 @@ export function calculateLearningRate(
   return Math.min(Math.max(alpha, 0.1), 0.7);
 }
 
+// WASM Search instance type
+type WASMSearchInstance = {
+  cosineSimilarity(a: Float32Array, b: Float32Array): number;
+  batchSimilarity(query: Float32Array, vectors: Float32Array[]): number[];
+  getStats(): { wasmAvailable: boolean; simdAvailable: boolean };
+};
+
 // AgentDB Vector Service Class
 
 export class AgentDBVectorService {
-  private wasmSearch: WASMVectorSearch | null = null;
+  private wasmSearch: WASMSearchInstance | null = null;
   private useAgentDB: boolean = false;
 
   constructor(options?: {
@@ -227,15 +258,22 @@ export class AgentDBVectorService {
   /**
    * Initialize with database for full AgentDB features
    */
-  initializeWithDatabase(db: any): void {
+  async initializeWithDatabase(db: any): Promise<void> {
     try {
-      this.wasmSearch = new WASMVectorSearch(db, {
-        enableWASM: true,
-        enableSIMD: true,
-        batchSize: 100,
-      });
-      this.useAgentDB = true;
-      console.log('[AgentDBVectorService] Initialized with database, WASM acceleration available');
+      const WASMVectorSearchClass = await getWASMVectorSearch();
+      if (WASMVectorSearchClass) {
+        this.wasmSearch = new WASMVectorSearchClass(db, {
+          enableWASM: true,
+          enableSIMD: true,
+          batchSize: 100,
+        });
+        this.useAgentDB = true;
+        console.log('[AgentDBVectorService] Initialized with database, WASM acceleration available');
+      } else {
+        console.debug('[AgentDBVectorService] WASMVectorSearch not available, using pure JavaScript');
+        this.wasmSearch = null;
+        this.useAgentDB = false;
+      }
     } catch (error) {
       console.debug('[AgentDBVectorService] Database initialization failed, using pure JavaScript');
       this.wasmSearch = null;

@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@media-gateway/core": "workspace:*",
-    "agentdb": "workspace:*",
+    "agentdb": "^2.0.0-alpha.2.18",
     "ruvector": "^0.1.31"
   },
   "devDependencies": {
