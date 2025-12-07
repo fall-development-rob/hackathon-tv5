@@ -1,74 +1,42 @@
-# AI Media Discovery - Home
+# AI Media Discovery - Homepage
 
-<!-- chunk: overview -->
+## Site Overview
+AI-powered media discovery platform solving the 45-minute decision problem.
+Find what to watch across Netflix, Prime, Disney+, HBO Max, Hulu, Apple TV+, Peacock, and Paramount+.
 
-## Overview
+## Key Features
+1. **Semantic Search** - Natural language queries understand mood and context
+2. **Personalized Recommendations** - Learns your preferences over time
+3. **Group Watch** - Find content everyone will enjoy
+4. **Cross-Platform Availability** - See where content is streaming
 
-AI Media Discovery helps you find movies and TV shows through natural language. Just describe what you're in the mood to watch, and we'll find the perfect match.
+## Available Actions
 
-<!-- chunk: capabilities -->
+### 1. Search (POST /api/search)
+Find content using natural language.
+Example: "exciting movies like The Matrix"
 
-## What You Can Do
+### 2. Recommendations (POST /api/recommendations)
+Get personalized suggestions based on preferences.
 
-### Natural Language Search
+### 3. Discover (GET /api/discover)
+Browse trending and popular content.
 
-Describe what you want to watch in plain English:
-- "exciting sci-fi adventure like Interstellar"
-- "cozy romantic comedy for a rainy day"
-- "dark psychological thriller with unexpected twists"
-- "something inspiring about overcoming challenges"
+### 4. Availability (GET /api/availability/:id)
+Check which platforms have specific content.
 
-### Browse by Category
+## Navigation
+- /search - Natural language search interface
+- /discover - Browse by category and genre
+- /movie/[id] - Movie details and availability
+- /tv/[id] - TV show details and availability
 
-- **Trending**: What's popular this week
-- **Top Rated**: Highest rated movies and shows
-- **Discover**: Filter by genre, year, and rating
+## For AI Agents
+This site implements ARW (Agent-Ready Web) specification.
+- Manifest: /.well-known/arw-manifest.json
+- Machine views: /llms/*.llm.md
+- All endpoints return structured JSON
+- Rate limits: 1000 req/min authenticated
 
-### Personalized Recommendations
-
-Based on your viewing history and preferences, we suggest content you'll love.
-
-<!-- chunk: api-access -->
-
-## API Access for AI Agents
-
-### Semantic Search
-
-```http
-POST /api/search
-Content-Type: application/json
-
-{
-  "query": "heartwarming animated movies for family",
-  "explain": true
-}
-```
-
-### Get Recommendations
-
-```http
-POST /api/recommendations
-Content-Type: application/json
-
-{
-  "basedOn": {
-    "contentId": 550,
-    "mediaType": "movie"
-  }
-}
-```
-
-### Discover Content
-
-```http
-GET /api/discover?category=trending&type=all
-```
-
-<!-- chunk: content-types -->
-
-## Content Types
-
-- **Movies**: Feature films from all genres and eras
-- **TV Shows**: Series with full season information
-
-All content metadata is sourced from The Movie Database (TMDB).
+## Attribution
+Powered by TMDB for content metadata.
