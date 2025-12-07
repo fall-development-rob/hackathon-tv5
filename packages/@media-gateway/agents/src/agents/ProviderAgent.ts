@@ -10,88 +10,21 @@ import type {
   CrossPlatformMatch,
   ContentFingerprint,
 } from '@media-gateway/core';
+import {
+  TMDBAdapter,
+  AvailabilityService,
+  type AggregatedAvailability,
+} from '@media-gateway/providers';
 
 /**
- * Provider configuration
+ * Provider Agent configuration
  */
-interface ProviderConfig {
-  id: string;
-  name: string;
-  baseUrl: string;
-  deepLinkTemplate: string;
-  regions: string[];
-  type: 'subscription' | 'rent' | 'buy' | 'free';
+export interface ProviderAgentConfig {
+  tmdbApiKey?: string;
+  defaultRegion?: string;
+  cacheTTL?: number;
+  enableTMDB?: boolean;
 }
-
-/**
- * Available streaming providers
- */
-const PROVIDERS: ProviderConfig[] = [
-  {
-    id: 'netflix',
-    name: 'Netflix',
-    baseUrl: 'https://www.netflix.com',
-    deepLinkTemplate: 'https://www.netflix.com/title/{id}',
-    regions: ['US', 'UK', 'CA', 'AU', 'DE', 'FR'],
-    type: 'subscription',
-  },
-  {
-    id: 'prime',
-    name: 'Amazon Prime Video',
-    baseUrl: 'https://www.amazon.com/gp/video',
-    deepLinkTemplate: 'https://www.amazon.com/gp/video/detail/{id}',
-    regions: ['US', 'UK', 'CA', 'AU', 'DE', 'FR', 'JP'],
-    type: 'subscription',
-  },
-  {
-    id: 'disney',
-    name: 'Disney+',
-    baseUrl: 'https://www.disneyplus.com',
-    deepLinkTemplate: 'https://www.disneyplus.com/movies/{slug}/{id}',
-    regions: ['US', 'UK', 'CA', 'AU', 'DE', 'FR'],
-    type: 'subscription',
-  },
-  {
-    id: 'hbo',
-    name: 'Max (HBO)',
-    baseUrl: 'https://www.max.com',
-    deepLinkTemplate: 'https://www.max.com/movies/{slug}/{id}',
-    regions: ['US'],
-    type: 'subscription',
-  },
-  {
-    id: 'hulu',
-    name: 'Hulu',
-    baseUrl: 'https://www.hulu.com',
-    deepLinkTemplate: 'https://www.hulu.com/movie/{slug}',
-    regions: ['US', 'JP'],
-    type: 'subscription',
-  },
-  {
-    id: 'apple',
-    name: 'Apple TV+',
-    baseUrl: 'https://tv.apple.com',
-    deepLinkTemplate: 'https://tv.apple.com/movie/{slug}/{id}',
-    regions: ['US', 'UK', 'CA', 'AU', 'DE', 'FR', 'JP'],
-    type: 'subscription',
-  },
-  {
-    id: 'peacock',
-    name: 'Peacock',
-    baseUrl: 'https://www.peacocktv.com',
-    deepLinkTemplate: 'https://www.peacocktv.com/watch/asset/{id}',
-    regions: ['US', 'UK'],
-    type: 'subscription',
-  },
-  {
-    id: 'paramount',
-    name: 'Paramount+',
-    baseUrl: 'https://www.paramountplus.com',
-    deepLinkTemplate: 'https://www.paramountplus.com/movies/video/{id}',
-    regions: ['US', 'UK', 'CA', 'AU'],
-    type: 'subscription',
-  },
-];
 
 /**
  * Provider Agent class
@@ -99,12 +32,33 @@ const PROVIDERS: ProviderConfig[] = [
  */
 export class ProviderAgent {
   private vectorWrapper: any;
+  private tmdbAdapter?: TMDBAdapter;
+  private availabilityService: AvailabilityService;
   private contentMatchCache: Map<string, CrossPlatformMatch> = new Map();
-  private availabilityCache: Map<string, { data: PlatformAvailability[]; timestamp: number }> = new Map();
-  private readonly cacheTTL = 3600000; // 1 hour
+  private readonly cacheTTL: number;
+  private readonly defaultRegion: string;
 
-  constructor(vectorWrapper: any) {
+  constructor(vectorWrapper: any, config: ProviderAgentConfig = {}) {
     this.vectorWrapper = vectorWrapper;
+    this.cacheTTL = config.cacheTTL ?? 3600000; // 1 hour
+    this.defaultRegion = config.defaultRegion ?? 'US';
+
+    // Initialize TMDB adapter if API key is available
+    const tmdbApiKey = config.tmdbApiKey ?? process.env.TMDB_API_KEY;
+    if (tmdbApiKey) {
+      this.tmdbAdapter = new TMDBAdapter({
+        apiKey: tmdbApiKey,
+        region: this.defaultRegion,
+      });
+    }
+
+    // Initialize availability service
+    this.availabilityService = new AvailabilityService({
+      tmdbApiKey,
+      enableTMDB: config.enableTMDB ?? !!tmdbApiKey,
+      defaultRegion: this.defaultRegion,
+      cacheTTL: this.cacheTTL,
+    });
   }
 
   /**
@@ -153,57 +107,20 @@ export class ProviderAgent {
    */
   async checkAvailability(
     content: MediaContent,
-    region: string = 'US'
+    region?: string
   ): Promise<PlatformAvailability[]> {
-    const cacheKey = `${content.id}:${region}`;
-
-    // Check cache
-    const cached = this.availabilityCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
-      return cached.data;
+    try {
+      // Use AvailabilityService to get real TMDB data
+      const availability = await this.availabilityService.getAvailability(
+        content,
+        region ?? this.defaultRegion
+      );
+      return availability.platforms;
+    } catch (error) {
+      console.error('Error checking availability:', error);
+      // Return empty array on error instead of throwing
+      return [];
     }
-
-    const availability: PlatformAvailability[] = [];
-
-    // In production, this would query actual provider APIs or a service like JustWatch
-    // For now, simulate with random availability
-    for (const provider of PROVIDERS) {
-      if (!provider.regions.includes(region)) {
-        continue;
-      }
-
-      // Simulate availability (in production, would query real API)
-      const isAvailable = Math.random() > 0.5;
-
-      if (isAvailable) {
-        availability.push({
-          platformId: provider.id,
-          platformName: provider.name,
-          available: true,
-          type: provider.type,
-          deepLink: this.generateDeepLink(provider, content),
-        });
-      }
-    }
-
-    // Cache result
-    this.availabilityCache.set(cacheKey, {
-      data: availability,
-      timestamp: Date.now(),
-    });
-
-    return availability;
-  }
-
-  /**
-   * Generate deep link for a provider
-   */
-  generateDeepLink(provider: ProviderConfig, content: MediaContent): string {
-    const slug = this.normalizeTitle(content.title).replace(/\s+/g, '-');
-
-    return provider.deepLinkTemplate
-      .replace('{id}', content.id.toString())
-      .replace('{slug}', slug);
   }
 
   /**
@@ -212,37 +129,19 @@ export class ProviderAgent {
   async findBestPlatform(
     content: MediaContent,
     userSubscriptions: string[],
-    region: string = 'US'
+    region?: string
   ): Promise<PlatformAvailability | null> {
-    const availability = await this.checkAvailability(content, region);
-
-    // First, try subscribed platforms
-    for (const sub of userSubscriptions) {
-      const match = availability.find(
-        a => a.platformId === sub && a.available
+    try {
+      // Use AvailabilityService's optimized platform selection
+      return await this.availabilityService.findBestPlatform(
+        content,
+        userSubscriptions,
+        region ?? this.defaultRegion
       );
-      if (match) {
-        return match;
-      }
+    } catch (error) {
+      console.error('Error finding best platform:', error);
+      return null;
     }
-
-    // Then, try any subscription platform
-    const subscription = availability.find(
-      a => a.type === 'subscription' && a.available
-    );
-    if (subscription) {
-      return subscription;
-    }
-
-    // Finally, try free platforms
-    const free = availability.find(
-      a => a.type === 'free' && a.available
-    );
-    if (free) {
-      return free;
-    }
-
-    return availability[0] ?? null;
   }
 
   /**
@@ -262,16 +161,26 @@ export class ProviderAgent {
     const fingerprint = this.generateFingerprint(content);
     const matches: Record<string, any> = {};
 
-    // In production, would search each platform's catalog
-    for (const provider of PROVIDERS) {
-      // Simulate match with high confidence
-      matches[provider.id] = {
-        platformId: provider.id,
-        contentId: `${provider.id}_${content.id}`,
-        confidence: 0.95 + Math.random() * 0.05,
-        deepLink: this.generateDeepLink(provider, content),
-        lastVerified: new Date(),
-      };
+    try {
+      // Get real availability data from TMDB
+      const availability = await this.availabilityService.getAvailability(
+        content,
+        this.defaultRegion
+      );
+
+      // Build matches from available platforms
+      for (const platform of availability.platforms) {
+        matches[platform.platformId] = {
+          platformId: platform.platformId,
+          contentId: `${platform.platformId}_${content.id}`,
+          confidence: 0.98, // High confidence for TMDB data
+          deepLink: platform.deepLink,
+          lastVerified: new Date(),
+        };
+      }
+    } catch (error) {
+      console.error('Error matching across platforms:', error);
+      // Continue with empty matches on error
     }
 
     const result: CrossPlatformMatch = {
@@ -288,38 +197,207 @@ export class ProviderAgent {
   /**
    * Get all available providers
    */
-  getProviders(): ProviderConfig[] {
-    return [...PROVIDERS];
+  getSupportedPlatforms(): Array<{ id: string; name: string }> {
+    return this.availabilityService.getSupportedPlatforms();
   }
 
   /**
    * Get providers available in a region
    */
-  getProvidersForRegion(region: string): ProviderConfig[] {
-    return PROVIDERS.filter(p => p.regions.includes(region));
+  getSupportedRegions(): string[] {
+    return this.availabilityService.getSupportedRegions();
   }
 
   /**
-   * Clear expired cache entries
+   * Search for content using TMDB
    */
-  cleanupCache(): number {
-    const now = Date.now();
-    let cleaned = 0;
-
-    for (const [key, value] of this.availabilityCache) {
-      if (now - value.timestamp > this.cacheTTL) {
-        this.availabilityCache.delete(key);
-        cleaned++;
-      }
+  async searchContent(query: string, page: number = 1): Promise<MediaContent[]> {
+    if (!this.tmdbAdapter) {
+      console.warn('TMDB adapter not initialized. Set TMDB_API_KEY environment variable.');
+      return [];
     }
 
-    return cleaned;
+    try {
+      return await this.tmdbAdapter.searchMulti(query, page);
+    } catch (error) {
+      console.error('Error searching content:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get trending content using TMDB
+   */
+  async getTrending(
+    mediaType: 'movie' | 'tv' | 'all' = 'all',
+    timeWindow: 'day' | 'week' = 'week'
+  ): Promise<MediaContent[]> {
+    if (!this.tmdbAdapter) {
+      console.warn('TMDB adapter not initialized. Set TMDB_API_KEY environment variable.');
+      return [];
+    }
+
+    try {
+      return await this.tmdbAdapter.getTrending(mediaType, timeWindow);
+    } catch (error) {
+      console.error('Error getting trending content:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get popular content using TMDB
+   */
+  async getPopular(mediaType: 'movie' | 'tv' = 'movie', page: number = 1): Promise<MediaContent[]> {
+    if (!this.tmdbAdapter) {
+      console.warn('TMDB adapter not initialized. Set TMDB_API_KEY environment variable.');
+      return [];
+    }
+
+    try {
+      if (mediaType === 'movie') {
+        return await this.tmdbAdapter.getPopularMovies(page);
+      } else {
+        return await this.tmdbAdapter.getPopularTVShows(page);
+      }
+    } catch (error) {
+      console.error('Error getting popular content:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get content details using TMDB
+   */
+  async getContentDetails(id: number, mediaType: 'movie' | 'tv'): Promise<MediaContent | null> {
+    if (!this.tmdbAdapter) {
+      console.warn('TMDB adapter not initialized. Set TMDB_API_KEY environment variable.');
+      return null;
+    }
+
+    try {
+      if (mediaType === 'movie') {
+        return await this.tmdbAdapter.getMovie(id);
+      } else {
+        return await this.tmdbAdapter.getTVShow(id);
+      }
+    } catch (error) {
+      console.error('Error getting content details:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get similar content recommendations
+   */
+  async getSimilar(
+    id: number,
+    mediaType: 'movie' | 'tv',
+    page: number = 1
+  ): Promise<MediaContent[]> {
+    if (!this.tmdbAdapter) {
+      console.warn('TMDB adapter not initialized. Set TMDB_API_KEY environment variable.');
+      return [];
+    }
+
+    try {
+      return await this.tmdbAdapter.getSimilar(id, mediaType, page);
+    } catch (error) {
+      console.error('Error getting similar content:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get content recommendations
+   */
+  async getRecommendations(
+    id: number,
+    mediaType: 'movie' | 'tv',
+    page: number = 1
+  ): Promise<MediaContent[]> {
+    if (!this.tmdbAdapter) {
+      console.warn('TMDB adapter not initialized. Set TMDB_API_KEY environment variable.');
+      return [];
+    }
+
+    try {
+      return await this.tmdbAdapter.getRecommendations(id, mediaType, page);
+    } catch (error) {
+      console.error('Error getting recommendations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Check if content is available on a specific platform
+   */
+  async isAvailableOn(
+    content: MediaContent,
+    platformId: string,
+    region?: string
+  ): Promise<boolean> {
+    try {
+      return await this.availabilityService.isAvailableOn(
+        content,
+        platformId,
+        region ?? this.defaultRegion
+      );
+    } catch (error) {
+      console.error('Error checking platform availability:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get availability for multiple content items
+   */
+  async getBatchAvailability(
+    contents: MediaContent[],
+    region?: string
+  ): Promise<Map<number, AggregatedAvailability>> {
+    try {
+      return await this.availabilityService.getBatchAvailability(
+        contents,
+        region ?? this.defaultRegion
+      );
+    } catch (error) {
+      console.error('Error getting batch availability:', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Clear all caches
+   */
+  clearCache(): void {
+    this.contentMatchCache.clear();
+    this.availabilityService.clearCache();
+    if (this.tmdbAdapter) {
+      this.tmdbAdapter.clearCache();
+    }
+  }
+
+  /**
+   * Clean expired cache entries
+   */
+  cleanupCache(): number {
+    const matchCleaned = this.contentMatchCache.size;
+    this.contentMatchCache.clear();
+
+    const availabilityCleaned = this.availabilityService.cleanCache();
+    const tmdbCleaned = this.tmdbAdapter?.cleanCache() ?? 0;
+
+    return matchCleaned + availabilityCleaned + tmdbCleaned;
   }
 }
 
 /**
  * Create a new Provider Agent instance
  */
-export function createProviderAgent(vectorWrapper: any): ProviderAgent {
-  return new ProviderAgent(vectorWrapper);
+export function createProviderAgent(
+  vectorWrapper: any,
+  config?: ProviderAgentConfig
+): ProviderAgent {
+  return new ProviderAgent(vectorWrapper, config);
 }
