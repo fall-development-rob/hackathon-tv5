@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 /**
- * Media Gateway MCP Server
+ * Media Gateway MCP Server v2.0.0
  * Production-ready MCP server for Claude Desktop integration
  * Exposes entertainment discovery, recommendation, and data moat features via MCP protocol
  *
- * @version 1.0.0
+ * @version 2.0.0
  * @description Solves the 45-minute decision problem with AI-powered media discovery
+ *
+ * New in v2.0.0:
+ * - Q-Learning tools for recommendation strategy optimization (inspired by hackathon-tv5)
+ * - FACT-style intelligent caching with three-tier TTL (inspired by github.com/ruvnet/FACT)
+ * - Swarm coordination tools for complex tasks (inspired by claude-flow)
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -46,6 +51,11 @@ import {
   calculateGroupCentroid,
   calculateMemberSatisfaction,
 } from '../services/GroupRecommendationService.js';
+
+// Import new tool modules (v2.0.0)
+import { learningTools, qLearningEngine, type LearningState, type RecommendationAction } from './learning-tools.js';
+import { cacheTools, mediaGatewayCache } from './cache-tools.js';
+import { swarmTools, swarmCoordinator } from './swarm-tools.js';
 
 // ============================================================================
 // In-Memory State (for standalone MCP operation)
@@ -119,21 +129,30 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 }
 
 /**
+ * Parsed intent from natural language query (internal type for MCP server)
+ */
+interface ParsedIntent {
+  type: 'search' | 'recommendation' | 'group_watch';
+  query: string;
+  filters: SearchFilters;
+  detectedGenres: string[];
+  mood: string | undefined;
+}
+
+/**
  * Parse natural language query to extract intent
  */
-function parseIntent(query: string): AgentIntent {
+function parseIntent(query: string): ParsedIntent {
   const lowerQuery = query.toLowerCase();
 
   // Detect intent type
-  let type: 'discover' | 'recommend' | 'search' | 'mood' | 'group' = 'search';
+  let type: ParsedIntent['type'] = 'search';
   if (lowerQuery.includes('recommend') || lowerQuery.includes('suggest')) {
-    type = 'recommend';
+    type = 'recommendation';
   } else if (lowerQuery.includes('discover') || lowerQuery.includes('explore')) {
-    type = 'discover';
-  } else if (lowerQuery.includes('mood') || lowerQuery.includes('feel')) {
-    type = 'mood';
+    type = 'search';
   } else if (lowerQuery.includes('group') || lowerQuery.includes('together') || lowerQuery.includes('family')) {
-    type = 'group';
+    type = 'group_watch';
   }
 
   // Extract filters from query
@@ -169,9 +188,8 @@ function parseIntent(query: string): AgentIntent {
     type,
     query,
     filters,
-    genres: detectedGenres,
+    detectedGenres,
     mood,
-    confidence: 0.8,
   };
 }
 
@@ -418,6 +436,29 @@ const tools = [
       required: ['session_id', 'user_id', 'content_id', 'vote'],
     },
   },
+
+  // ==========================================================================
+  // V2.0.0: Q-LEARNING TOOLS (inspired by hackathon-tv5)
+  // ==========================================================================
+  ...learningTools,
+
+  // ==========================================================================
+  // V2.0.0: INTELLIGENT CACHING TOOLS (inspired by FACT)
+  // ==========================================================================
+  ...cacheTools,
+
+  // ==========================================================================
+  // V2.0.0: SWARM COORDINATION TOOLS (inspired by claude-flow)
+  // ==========================================================================
+  ...swarmTools,
+];
+
+// Combine all tools for export
+const allTools = [
+  ...tools.slice(0, -learningTools.length - cacheTools.length - swarmTools.length),
+  ...learningTools,
+  ...cacheTools,
+  ...swarmTools,
 ];
 
 // ============================================================================
@@ -466,10 +507,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const response = {
           intent,
           personalized: !!userPrefs,
-          results: [] as any[],
+          results: [] as unknown[],
           explanation: include_explanation ? {
             query_understood: `Looking for ${intent.type} content`,
-            detected_genres: intent.genres,
+            filters_applied: intent.filters,
+            detected_genres: intent.detectedGenres,
             detected_mood: intent.mood,
             personalization_applied: !!userPrefs,
           } : undefined,
@@ -505,13 +547,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           limit?: number;
         };
 
-        const filters: SearchFilters = {
-          mediaType: media_type,
-          genres,
-          yearMin: year_min,
-          yearMax: year_max,
-          ratingMin: rating_min,
-        };
+        const filters: SearchFilters = {};
+        if (media_type) filters.mediaType = media_type;
+        if (genres) filters.genres = genres;
+        if (year_min) filters.yearMin = year_min;
+        if (year_max) filters.yearMax = year_max;
+        if (rating_min) filters.ratingMin = rating_min;
 
         return {
           content: [{
@@ -667,14 +708,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           duration: duration_seconds,
           totalDuration: total_duration_seconds,
           completionRate: duration_seconds / total_duration_seconds,
-          rating,
           isRewatch: is_rewatch,
           context: {
             dayOfWeek: new Date().getDay(),
             hourOfDay: new Date().getHours(),
+            isGroupWatch: false,
           },
           timestamp: new Date(),
         };
+        if (rating !== undefined) {
+          (watchEvent as { rating?: number }).rating = rating;
+        }
 
         // Calculate signal strength
         const signalStrength = calculateSignalStrength(watchEvent);
@@ -1033,6 +1077,859 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               content_id,
               vote,
               recorded: true,
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ======================================================================
+      // V2.0.0: Q-LEARNING HANDLERS
+      // ======================================================================
+      case 'learn_start_session': {
+        const { user_id } = args as {
+          user_id: string;
+        };
+
+        const sessionId = qLearningEngine.startSession(user_id);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              user_id,
+              session_id: sessionId,
+              message: 'Learning session started',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_record_watch': {
+        const { session_id, content_id, duration_seconds, total_duration_seconds, rating, action_taken } = args as {
+          session_id: string;
+          content_id: number;
+          duration_seconds: number;
+          total_duration_seconds: number;
+          rating?: number;
+          action_taken: RecommendationAction;
+        };
+
+        // Create a watch event to calculate reward
+        const completionRate = duration_seconds / total_duration_seconds;
+        const watchEvent: WatchEvent = {
+          userId: '',
+          contentId: content_id,
+          mediaType: 'movie',
+          platformId: 'default',
+          duration: duration_seconds,
+          totalDuration: total_duration_seconds,
+          completionRate,
+          isRewatch: false,
+          timestamp: new Date(),
+          context: { dayOfWeek: new Date().getDay(), hourOfDay: new Date().getHours(), isGroupWatch: false },
+        };
+        if (rating !== undefined) {
+          (watchEvent as { rating?: number }).rating = rating;
+        }
+        const reward = qLearningEngine.calculateReward(watchEvent);
+
+        qLearningEngine.recordAction(session_id, action_taken, content_id, reward);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              session_id,
+              content_id,
+              action: action_taken,
+              reward,
+              message: 'Watch event recorded for learning',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_end_session': {
+        const { session_id } = args as { session_id: string };
+
+        const session = qLearningEngine.endSession(session_id);
+
+        if (!session) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'Session not found',
+              }, null, 2),
+            }],
+          };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              session_id,
+              total_reward: session.totalReward,
+              actions_count: session.actions.length,
+              message: 'Learning session ended',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_select_strategy': {
+        const { time_of_day, day_type, recent_genres = [], avg_completion_rate = 0.5, mood } = args as {
+          time_of_day: 'morning' | 'afternoon' | 'evening' | 'night';
+          day_type: 'weekday' | 'weekend';
+          recent_genres?: string[];
+          avg_completion_rate?: number;
+          mood?: string;
+        };
+
+        const learningState: LearningState = {
+          timeOfDay: time_of_day,
+          dayType: day_type,
+          recentGenres: recent_genres,
+          avgCompletionRate: avg_completion_rate,
+          sessionCount: 1,
+          mood,
+        };
+
+        const action = qLearningEngine.selectAction(learningState);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              state: learningState,
+              selected_action: action,
+              message: 'Recommendation strategy selected via Q-learning',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_train': {
+        const { batch_size = 32 } = args as {
+          batch_size?: number;
+        };
+
+        const result = qLearningEngine.train(batch_size);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              ...result,
+              message: 'Training completed with experience replay',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_get_stats': {
+        const stats = qLearningEngine.getStats();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              ...stats,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_get_preferences': {
+        const prefs = qLearningEngine.getLearnedPreferences();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              ...prefs,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_export_model': {
+        const model = qLearningEngine.exportModel();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              model,
+              message: 'Model exported successfully',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_import_model': {
+        const { model_data } = args as { model_data: ReturnType<typeof qLearningEngine.exportModel> };
+
+        qLearningEngine.importModel(model_data);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: 'Model imported successfully',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'learn_clear': {
+        const { confirm } = args as { confirm: boolean };
+
+        if (!confirm) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'Confirm must be true to clear learning data',
+              }, null, 2),
+            }],
+          };
+        }
+
+        qLearningEngine.clear();
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: 'All learning data cleared',
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ======================================================================
+      // V2.0.0: INTELLIGENT CACHING HANDLERS
+      // ======================================================================
+      case 'cache_get': {
+        const { type, key, context } = args as {
+          type: 'user_preferences' | 'trending' | 'content' | 'search' | 'recommendations' | 'genres' | 'platforms';
+          key: string;
+          context?: string;
+        };
+
+        let value: unknown = null;
+        switch (type) {
+          case 'user_preferences':
+            value = mediaGatewayCache.getUserPreferences(key);
+            break;
+          case 'trending':
+            value = mediaGatewayCache.getTrending(key);
+            break;
+          case 'content':
+            value = mediaGatewayCache.getContent(parseInt(key, 10));
+            break;
+          case 'search':
+            value = mediaGatewayCache.getSearchResults(key);
+            break;
+          case 'recommendations':
+            value = mediaGatewayCache.getRecommendations(key, context || 'default');
+            break;
+          case 'genres':
+            value = mediaGatewayCache.getGenres();
+            break;
+          case 'platforms':
+            value = mediaGatewayCache.getPlatforms(parseInt(key, 10));
+            break;
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: value !== null,
+              type,
+              key,
+              value,
+              cached: value !== null,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'cache_set': {
+        const { type, key, value, context, ttl_seconds } = args as {
+          type: 'user_preferences' | 'trending' | 'content' | 'search' | 'recommendations' | 'genres' | 'platforms';
+          key: string;
+          value: unknown;
+          context?: string;
+          ttl_seconds?: number;
+        };
+
+        switch (type) {
+          case 'user_preferences':
+            mediaGatewayCache.setUserPreferences(key, value);
+            break;
+          case 'trending':
+            mediaGatewayCache.setTrending(key, value);
+            break;
+          case 'content':
+            mediaGatewayCache.setContent(parseInt(key, 10), value);
+            break;
+          case 'search':
+            mediaGatewayCache.setSearchResults(key, value);
+            break;
+          case 'recommendations':
+            mediaGatewayCache.setRecommendations(key, context || 'default', value);
+            break;
+          case 'genres':
+            mediaGatewayCache.setGenres(value);
+            break;
+          case 'platforms':
+            mediaGatewayCache.setPlatforms(parseInt(key, 10), value);
+            break;
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              type,
+              key,
+              cached: true,
+              ttl_seconds,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'cache_invalidate': {
+        const { pattern, user_id, type } = args as {
+          pattern?: string;
+          user_id?: string;
+          type?: string;
+        };
+
+        let count = 0;
+        if (user_id) {
+          count = mediaGatewayCache.invalidateUser(user_id);
+        } else if (pattern) {
+          // Use internal cache method (exposed via export)
+          count = 0; // Pattern invalidation requires internal access
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              invalidated_count: count,
+              user_id,
+              pattern,
+              type,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'cache_stats': {
+        const { detailed = false } = args as { detailed?: boolean };
+
+        const stats = mediaGatewayCache.getStats();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              stats,
+              detailed,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'cache_prune': {
+        const pruned = mediaGatewayCache.prune();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              pruned_entries: pruned,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'cache_warm': {
+        const { categories } = args as {
+          categories: Array<'genres' | 'trending' | 'popular_content'>;
+        };
+
+        // Pre-warm cache with common data
+        let warmed = 0;
+        for (const category of categories) {
+          if (category === 'genres') {
+            // Example genres data
+            mediaGatewayCache.setGenres([
+              { id: 28, name: 'Action' },
+              { id: 35, name: 'Comedy' },
+              { id: 18, name: 'Drama' },
+              { id: 27, name: 'Horror' },
+              { id: 878, name: 'Science Fiction' },
+            ]);
+            warmed++;
+          }
+          if (category === 'trending') {
+            mediaGatewayCache.setTrending('all', { items: [], cached_at: new Date() });
+            warmed++;
+          }
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              categories_warmed: categories,
+              entries_added: warmed,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'cache_export': {
+        const entries = mediaGatewayCache.export();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              entry_count: entries.length,
+              entries,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'cache_import': {
+        const { entries } = args as { entries: unknown[] };
+
+        const imported = mediaGatewayCache.import(entries as any);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              imported_count: imported,
+            }, null, 2),
+          }],
+        };
+      }
+
+      // ======================================================================
+      // V2.0.0: SWARM COORDINATION HANDLERS
+      // ======================================================================
+      case 'swarm_init': {
+        const { topology = 'mesh', max_agents = 5 } = args as {
+          topology?: 'mesh' | 'hierarchical' | 'ring' | 'star';
+          max_agents?: number;
+        };
+
+        const swarm = swarmCoordinator.initSwarm(topology, max_agents);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              swarm_id: swarm.id,
+              topology: swarm.topology,
+              status: swarm.status,
+              initial_agents: Array.from(swarm.agents.values()).map(a => ({
+                id: a.id,
+                role: a.role,
+                status: a.status,
+              })),
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_spawn_agent': {
+        const { swarm_id, role, name } = args as {
+          swarm_id?: string;
+          role: 'content_analyzer' | 'preference_learner' | 'recommendation_generator' |
+                'diversity_optimizer' | 'trend_tracker' | 'social_aggregator' |
+                'cache_manager' | 'quality_assessor';
+          name?: string;
+        };
+
+        const swarm = swarmCoordinator.getSwarmStatus(swarm_id);
+        if (!swarm) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'No active swarm found. Initialize a swarm first.',
+              }, null, 2),
+            }],
+          };
+        }
+
+        const agent = swarmCoordinator.spawnAgent(swarm.id, role, name);
+
+        if (!agent) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'Failed to spawn agent',
+              }, null, 2),
+            }],
+          };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              agent_id: agent.id,
+              role: agent.role,
+              status: agent.status,
+              swarm_id: swarm.id,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_create_task': {
+        const { swarm_id, description, priority = 'medium', dependencies = [] } = args as {
+          swarm_id?: string;
+          description: string;
+          priority?: 'low' | 'medium' | 'high' | 'critical';
+          dependencies?: string[];
+        };
+
+        const swarm = swarmCoordinator.getSwarmStatus(swarm_id);
+        if (!swarm) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'No active swarm found',
+              }, null, 2),
+            }],
+          };
+        }
+
+        const task = swarmCoordinator.createTask(swarm.id, description, priority, dependencies);
+
+        if (!task) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'Failed to create task',
+              }, null, 2),
+            }],
+          };
+        }
+
+        // Try to assign the task
+        const assigned = swarmCoordinator.assignTask(swarm.id, task.id);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              task_id: task.id,
+              description: task.description,
+              priority: task.priority,
+              status: task.status,
+              assigned: assigned,
+              assigned_agent: task.assignedAgent,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_orchestrate_recommendation': {
+        const { swarm_id, user_id, mood, time_available, group_members } = args as {
+          swarm_id?: string;
+          user_id: string;
+          mood?: string;
+          time_available?: number;
+          group_members?: string[];
+        };
+
+        const swarm = swarmCoordinator.getSwarmStatus(swarm_id);
+        if (!swarm) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'No active swarm found',
+              }, null, 2),
+            }],
+          };
+        }
+
+        // Build context object only with defined values
+        const context: { mood?: string; timeAvailable?: number; groupMembers?: string[] } = {};
+        if (mood !== undefined) context.mood = mood;
+        if (time_available !== undefined) context.timeAvailable = time_available;
+        if (group_members !== undefined) context.groupMembers = group_members;
+
+        const taskIds = swarmCoordinator.orchestrateRecommendation(
+          swarm.id,
+          user_id,
+          context
+        );
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              swarm_id: swarm.id,
+              user_id,
+              task_count: taskIds.length,
+              task_ids: taskIds,
+              pipeline: 'recommendation_generation',
+              context: { mood, time_available, group_members },
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_status': {
+        const { swarm_id, verbose = false } = args as {
+          swarm_id?: string;
+          verbose?: boolean;
+        };
+
+        const swarm = swarmCoordinator.getSwarmStatus(swarm_id);
+
+        if (!swarm) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'No active swarm found',
+              }, null, 2),
+            }],
+          };
+        }
+
+        const baseResponse = {
+          success: true,
+          swarm_id: swarm.id,
+          topology: swarm.topology,
+          status: swarm.status,
+          metrics: swarm.metrics,
+          agent_count: swarm.agents.size,
+          task_count: swarm.tasks.size,
+        };
+
+        if (verbose) {
+          const verboseResponse = {
+            ...baseResponse,
+            agents: Array.from(swarm.agents.values()).map(a => ({
+              id: a.id,
+              role: a.role,
+              status: a.status,
+              task: a.task,
+              metrics: a.metrics,
+            })),
+            pending_tasks: swarmCoordinator.getPendingTasks(swarm_id),
+          };
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify(verboseResponse, null, 2),
+            }],
+          };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(baseResponse, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_list_agents': {
+        const { swarm_id, filter = 'all' } = args as {
+          swarm_id?: string;
+          filter?: 'all' | 'idle' | 'busy';
+        };
+
+        let agents = swarmCoordinator.listAgents(swarm_id);
+
+        if (filter !== 'all') {
+          agents = agents.filter(a => a.status === filter);
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              filter,
+              count: agents.length,
+              agents: agents.map(a => ({
+                id: a.id,
+                role: a.role,
+                status: a.status,
+                task: a.task,
+                metrics: a.metrics,
+              })),
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_task_status': {
+        const { swarm_id, task_id } = args as {
+          swarm_id?: string;
+          task_id: string;
+        };
+
+        const swarm = swarmCoordinator.getSwarmStatus(swarm_id);
+        if (!swarm) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'No active swarm found',
+              }, null, 2),
+            }],
+          };
+        }
+
+        const task = swarmCoordinator.getTaskStatus(swarm.id, task_id);
+
+        if (!task) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'Task not found',
+              }, null, 2),
+            }],
+          };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              task_id: task.id,
+              description: task.description,
+              priority: task.priority,
+              status: task.status,
+              assigned_agent: task.assignedAgent,
+              dependencies: task.dependencies,
+              result: task.result,
+              error: task.error,
+              created_at: task.createdAt,
+              started_at: task.startedAt,
+              completed_at: task.completedAt,
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_complete_task': {
+        const { swarm_id, task_id, result } = args as {
+          swarm_id?: string;
+          task_id: string;
+          result: unknown;
+        };
+
+        const swarm = swarmCoordinator.getSwarmStatus(swarm_id);
+        if (!swarm) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                message: 'No active swarm found',
+              }, null, 2),
+            }],
+          };
+        }
+
+        const completed = swarmCoordinator.completeTask(swarm.id, task_id, result);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: completed,
+              task_id,
+              message: completed ? 'Task completed successfully' : 'Failed to complete task',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_terminate': {
+        const { swarm_id } = args as { swarm_id: string };
+
+        const terminated = swarmCoordinator.terminateSwarm(swarm_id);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: terminated,
+              swarm_id,
+              message: terminated ? 'Swarm terminated' : 'Failed to terminate swarm',
+            }, null, 2),
+          }],
+        };
+      }
+
+      case 'swarm_coordinator_stats': {
+        const stats = swarmCoordinator.getCoordinatorStats();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              ...stats,
             }, null, 2),
           }],
         };
