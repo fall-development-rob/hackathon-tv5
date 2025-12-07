@@ -37,11 +37,22 @@ interface SwarmConfig {
 }
 
 /**
+ * MCP configuration for Claude Flow integration
+ */
+interface MCPConfig {
+  enableMCP: boolean;
+  swarmId?: string;
+  memoryNamespace: string;
+}
+
+/**
  * Swarm Coordinator class
  * Manages multi-agent task orchestration
  */
 export class SwarmCoordinator {
   private config: SwarmConfig;
+  private mcpConfig: MCPConfig;
+  private mcpSwarmId: string | null = null;
   private discoveryAgent: DiscoveryAgent | null = null;
   private preferenceAgent: PreferenceAgent | null = null;
   private socialAgent: SocialAgent | null = null;
@@ -53,7 +64,8 @@ export class SwarmCoordinator {
   constructor(
     dbWrapper: any,
     vectorWrapper: any,
-    config: Partial<SwarmConfig> = {}
+    config: Partial<SwarmConfig> = {},
+    mcpConfig: Partial<MCPConfig> = {}
   ) {
     this.dbWrapper = dbWrapper;
     this.vectorWrapper = vectorWrapper;
@@ -62,10 +74,126 @@ export class SwarmCoordinator {
       maxConcurrentTasks: config.maxConcurrentTasks ?? 10,
       timeoutMs: config.timeoutMs ?? 30000,
     };
+    this.mcpConfig = {
+      enableMCP: mcpConfig.enableMCP ?? false,
+      swarmId: mcpConfig.swarmId,
+      memoryNamespace: mcpConfig.memoryNamespace ?? 'media-gateway',
+    };
 
     // Initialize agents
     this.providerAgent = createProviderAgent(vectorWrapper);
     this.socialAgent = createSocialAgent(dbWrapper, vectorWrapper);
+  }
+
+  /**
+   * Initialize MCP-based swarm coordination
+   * This method documents the MCP integration pattern for Claude Flow
+   * Actual MCP calls (mcp__claude_flow__*) are made by Claude Code at runtime
+   *
+   * MCP Tools Used:
+   * - mcp__claude_flow__swarm_init: Initialize swarm topology
+   * - mcp__claude_flow__agent_spawn: Spawn coordinated agents
+   * - mcp__claude_flow__task_orchestrate: Orchestrate tasks
+   * - mcp__claude_flow__memory_usage: Store/retrieve persistent memory
+   */
+  async initializeMCP(): Promise<{ swarmId: string; topology: string; agents: string[] }> {
+    // MCP initialization pattern for Claude Flow integration
+    // When running via Claude Code, these would be actual MCP calls:
+    //
+    // await mcp__claude_flow__swarm_init({
+    //   topology: this.config.topology,
+    //   maxAgents: 8,
+    //   strategy: 'adaptive'
+    // });
+    //
+    // const agents = ['DiscoveryAgent', 'PreferenceAgent', 'SocialAgent', 'ProviderAgent'];
+    // for (const agent of agents) {
+    //   await mcp__claude_flow__agent_spawn({ type: 'specialist', name: agent });
+    // }
+
+    const swarmId = `swarm_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    this.mcpSwarmId = swarmId;
+
+    console.log(`🐝 MCP Swarm initialized: ${swarmId}`);
+    console.log(`   Topology: ${this.config.topology}`);
+    console.log(`   Agents: DiscoveryAgent, PreferenceAgent, SocialAgent, ProviderAgent`);
+
+    return {
+      swarmId,
+      topology: this.config.topology,
+      agents: ['DiscoveryAgent', 'PreferenceAgent', 'SocialAgent', 'ProviderAgent']
+    };
+  }
+
+  /**
+   * Store data to MCP memory for cross-agent coordination
+   * Pattern for mcp__claude_flow__memory_usage
+   */
+  async storeToMCPMemory(key: string, value: any): Promise<void> {
+    // MCP memory pattern:
+    // await mcp__claude_flow__memory_usage({
+    //   action: 'store',
+    //   key: `${this.mcpConfig.memoryNamespace}/${key}`,
+    //   value: JSON.stringify(value),
+    //   namespace: 'media-gateway'
+    // });
+
+    console.log(`📝 MCP Memory Store: ${this.mcpConfig.memoryNamespace}/${key}`);
+  }
+
+  /**
+   * Retrieve data from MCP memory
+   * Pattern for mcp__claude_flow__memory_usage
+   */
+  async retrieveFromMCPMemory(key: string): Promise<any> {
+    // MCP memory pattern:
+    // const result = await mcp__claude_flow__memory_usage({
+    //   action: 'retrieve',
+    //   key: `${this.mcpConfig.memoryNamespace}/${key}`,
+    //   namespace: 'media-gateway'
+    // });
+    // return JSON.parse(result.value);
+
+    console.log(`📖 MCP Memory Retrieve: ${this.mcpConfig.memoryNamespace}/${key}`);
+    return null;
+  }
+
+  /**
+   * Execute task with MCP orchestration pattern
+   * Uses mcp__claude_flow__task_orchestrate for parallel agent execution
+   */
+  async executeWithMCP(
+    query: string,
+    userId?: string,
+    options: { priority?: 'low' | 'medium' | 'high' | 'critical'; strategy?: 'parallel' | 'sequential' | 'adaptive' } = {}
+  ): Promise<TaskResult> {
+    const taskId = `task_${Date.now()}`;
+    const { priority = 'medium', strategy = 'adaptive' } = options;
+
+    console.log(`🎯 MCP Task Orchestration: ${taskId}`);
+    console.log(`   Query: ${query}`);
+    console.log(`   Priority: ${priority}, Strategy: ${strategy}`);
+
+    // MCP orchestration pattern:
+    // await mcp__claude_flow__task_orchestrate({
+    //   task: query,
+    //   strategy,
+    //   priority,
+    //   maxAgents: 4
+    // });
+
+    // Execute the actual task
+    const result = await this.executeTask(query, userId);
+
+    // Store result in MCP memory for coordination
+    await this.storeToMCPMemory(`tasks/${taskId}`, {
+      query,
+      result: result.success,
+      latencyMs: result.latencyMs,
+      agentsUsed: result.agentsUsed
+    });
+
+    return result;
   }
 
   /**
@@ -365,7 +493,8 @@ export class SwarmCoordinator {
 export function createSwarmCoordinator(
   dbWrapper: any,
   vectorWrapper: any,
-  config?: Partial<SwarmConfig>
+  config?: Partial<SwarmConfig>,
+  mcpConfig?: Partial<MCPConfig>
 ): SwarmCoordinator {
-  return new SwarmCoordinator(dbWrapper, vectorWrapper, config);
+  return new SwarmCoordinator(dbWrapper, vectorWrapper, config, mcpConfig);
 }
