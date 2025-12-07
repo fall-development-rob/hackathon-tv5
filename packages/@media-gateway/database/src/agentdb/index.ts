@@ -58,6 +58,8 @@ export class AgentDBWrapper {
   private reflexionMemory: any;
   private skillLibrary: any;
   private initialized: boolean = false;
+  private crossPlatformMatches: Set<string> = new Set();
+  private socialConnections: Set<string> = new Set();
 
   constructor(private dbPath: string = './media-gateway.db') {}
 
@@ -320,6 +322,30 @@ export class AgentDBWrapper {
   }
 
   // =========================================================================
+  // Cross-Platform & Social Tracking
+  // =========================================================================
+
+  /**
+   * Record a cross-platform content match
+   * @param contentId - The unique content identifier
+   * @param platforms - Array of platform names where content was matched
+   */
+  recordCrossPlatformMatch(contentId: number, platforms: string[]): void {
+    const matchKey = `${contentId}:${platforms.sort().join(',')}`;
+    this.crossPlatformMatches.add(matchKey);
+  }
+
+  /**
+   * Record a social connection between users
+   * @param userId1 - First user identifier
+   * @param userId2 - Second user identifier
+   */
+  recordSocialConnection(userId1: string, userId2: string): void {
+    const connectionKey = [userId1, userId2].sort().join(':');
+    this.socialConnections.add(connectionKey);
+  }
+
+  // =========================================================================
   // Data Moat Metrics
   // =========================================================================
 
@@ -355,8 +381,8 @@ export class AgentDBWrapper {
     return {
       preferenceVectorCount: patternStats.totalPatterns,
       avgPreferenceDepth: patternStats.avgSuccessRate,
-      crossPlatformMatchCount: 0, // TODO: Implement
-      socialConnectionCount: 0, // TODO: Implement
+      crossPlatformMatchCount: this.crossPlatformMatches.size,
+      socialConnectionCount: this.socialConnections.size,
       skillCount: skillCount?.count ?? 0,
       avgRecommendationAccuracy: patternStats.avgSuccessRate,
       retentionRate: episodeStats?.successRate ?? 0,
