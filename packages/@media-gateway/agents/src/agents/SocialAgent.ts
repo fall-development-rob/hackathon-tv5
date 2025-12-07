@@ -14,6 +14,7 @@ import type {
 } from '@media-gateway/core';
 import {
   calculateGroupCentroid,
+  calculateGroupScore,
   rankGroupCandidates,
   applyContextBoosts,
   processVotes,
@@ -65,6 +66,15 @@ export class SocialAgent {
     // Generate recommendations for the group
     const candidates = await this.generateGroupCandidates(memberIds, context);
     session.candidates = candidates;
+
+    // Record social connections between all group members
+    // This helps build the social graph for network effects
+    const allMembers = [initiatorId, ...memberIds.filter(id => id !== initiatorId)];
+    for (let i = 0; i < allMembers.length; i++) {
+      for (let j = i + 1; j < allMembers.length; j++) {
+        this.dbWrapper.recordSocialConnection(allMembers[i]!, allMembers[j]!);
+      }
+    }
 
     this.activeSessions.set(session.id, session);
     return session;
@@ -191,6 +201,15 @@ export class SocialAgent {
       session.selectedContentId = winner.content.id;
       session.status = 'decided';
       session.decidedAt = new Date();
+
+      // Strengthen social connections for users who participated in voting
+      // This reinforces the social graph with actual engagement
+      const votingUsers = Object.keys(allVotes);
+      for (let i = 0; i < votingUsers.length; i++) {
+        for (let j = i + 1; j < votingUsers.length; j++) {
+          this.dbWrapper.recordSocialConnection(votingUsers[i]!, votingUsers[j]!);
+        }
+      }
     }
 
     return winner;
@@ -268,6 +287,52 @@ export class SocialAgent {
    */
   getExplanation(candidate: GroupCandidate): string {
     return generateGroupExplanation(candidate);
+  }
+
+  /**
+   * Calculate detailed group score for a specific content
+   * Useful for real-time evaluation and debugging
+   */
+  async calculateContentGroupScore(
+    contentId: number,
+    memberIds: string[]
+  ): Promise<{
+    groupScore: number;
+    memberScores: Record<string, number>;
+    minSatisfaction: number;
+  } | null> {
+    // Get content embedding
+    const content = await this.vectorWrapper.searchById(contentId);
+    if (!content) {
+      return null;
+    }
+
+    const contentText = `${content.title} ${content.overview}`;
+    const embedding = await this.vectorWrapper.generateEmbedding(contentText);
+    if (!embedding) {
+      return null;
+    }
+
+    // Get member profiles
+    const memberProfiles: MemberProfile[] = [];
+    for (const memberId of memberIds) {
+      const preferences = await this.dbWrapper.getPreferencePattern(memberId);
+      memberProfiles.push({
+        userId: memberId,
+        preferences: preferences ?? {
+          vector: null,
+          confidence: 0,
+          genreAffinities: {},
+          moodMappings: [],
+          temporalPatterns: [],
+          updatedAt: new Date(),
+        },
+        weight: 1.0,
+      });
+    }
+
+    // Calculate and return group score using core library function
+    return calculateGroupScore(embedding, memberProfiles);
   }
 
   /**
