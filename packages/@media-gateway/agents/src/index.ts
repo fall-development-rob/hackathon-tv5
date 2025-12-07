@@ -17,3 +17,13 @@ export {
 
 // Orchestration
 export { SwarmCoordinator, createSwarmCoordinator } from './orchestration/SwarmCoordinator.js';
+
+// Neural Training
+export {
+  NeuralTrainer,
+  createNeuralTrainer,
+  type PatternType,
+  type NeuralTrainingConfig,
+  type TrainingResult,
+  type PatternAnalysis,
+} from './neural/NeuralTrainer.js';
