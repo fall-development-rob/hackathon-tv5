@@ -8,6 +8,30 @@
 import { NeuralTrainer, createNeuralTrainer } from '../neural/NeuralTrainer.js';
 
 /**
+ * ReflexionMemory interface for persistent experience storage
+ * Compatible with agentdb's ReflexionMemory controller
+ */
+export interface Episode {
+  task: string;
+  input: string;
+  output: string;
+  reward: number;
+  success: boolean;
+  sessionId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReflexionMemory {
+  storeEpisode(episode: Episode): Promise<void>;
+  retrieveRelevant(query: string, k?: number): Promise<Episode[]>;
+  getTaskStats(task: string): Promise<{
+    totalAttempts: number;
+    successRate: number;
+    averageReward: number;
+  }>;
+}
+
+/**
  * State representation for Q-Learning
  */
 export interface QState {
@@ -93,6 +117,10 @@ export interface QLearningConfig {
   batchSize?: number;
   /** Enable neural trainer integration */
   useNeuralTrainer?: boolean;
+  /** Optional ReflexionMemory for persistent experience storage */
+  reflexionMemory?: ReflexionMemory;
+  /** Session ID for episode tracking */
+  sessionId?: string;
 }
 
 /**
@@ -106,6 +134,8 @@ export class QLearning {
   private replayBuffer: Experience[];
   private epsilon: number;
   private neuralTrainer?: NeuralTrainer;
+  private reflexionMemory?: ReflexionMemory;
+  private sessionId: string;
 
   private readonly learningRate: number;
   private readonly discountFactor: number;
@@ -137,12 +167,13 @@ export class QLearning {
 
     this.qTable = new Map();
     this.replayBuffer = [];
+    if (config.reflexionMemory !== undefined) {
+      this.reflexionMemory = config.reflexionMemory;
+    }
+    this.sessionId = config.sessionId ?? `qlearning-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
     if (config.useNeuralTrainer !== false) {
-      this.neuralTrainer = createNeuralTrainer({
-        enableCache: true,
-        cacheSize: 1000,
-      });
+      this.neuralTrainer = createNeuralTrainer({});
     }
   }
 
@@ -205,12 +236,14 @@ export class QLearning {
 
     // Exploration: random action
     if (explore && Math.random() < this.epsilon) {
-      return this.actions[Math.floor(Math.random() * this.actions.length)];
+      const randomAction = this.actions[Math.floor(Math.random() * this.actions.length)];
+      return randomAction ?? 'recommend_similar';
     }
 
     // Exploitation: best known action
     const qValues = this.getQValues(stateKey);
-    let bestAction = this.actions[0];
+    const firstAction = this.actions[0] ?? 'recommend_similar';
+    let bestAction: QAction = firstAction;
     let bestValue = qValues.get(bestAction) || 0;
 
     for (const action of this.actions) {
@@ -308,9 +341,14 @@ export class QLearning {
   /**
    * Train on a batch of experiences (experience replay)
    */
-  train(experiences: Experience[]): void {
+  async train(experiences: Experience[]): Promise<void> {
     // Add to replay buffer
     this.replayBuffer.push(...experiences);
+
+    // Store experiences in ReflexionMemory if available
+    if (this.reflexionMemory) {
+      await this.storeExperiencesAsEpisodes(experiences);
+    }
 
     // Trim buffer if too large
     if (this.replayBuffer.length > this.replayBufferSize) {
@@ -323,7 +361,10 @@ export class QLearning {
 
     for (let i = 0; i < batchSize; i++) {
       const index = Math.floor(Math.random() * this.replayBuffer.length);
-      batch.push(this.replayBuffer[index]);
+      const experience = this.replayBuffer[index];
+      if (experience) {
+        batch.push(experience);
+      }
     }
 
     // Update Q-values for batch
@@ -452,6 +493,143 @@ export class QLearning {
     this.qTable.clear();
     this.replayBuffer = [];
     this.epsilon = 0.3; // Reset to initial epsilon
+  }
+
+  /**
+   * Connect or replace ReflexionMemory instance
+   */
+  connectReflexionMemory(memory: ReflexionMemory): void {
+    this.reflexionMemory = memory;
+  }
+
+  /**
+   * Retrieve similar experiences from ReflexionMemory based on state similarity
+   */
+  async retrieveSimilarExperiences(state: QState, k: number = 10): Promise<Experience[]> {
+    if (!this.reflexionMemory) {
+      return [];
+    }
+
+    try {
+      // Create query text from state for similarity search
+      const stateQuery = this.stateToQueryText(state);
+
+      // Retrieve relevant episodes from ReflexionMemory
+      const episodes = await this.reflexionMemory.retrieveRelevant(stateQuery, k);
+
+      // Convert episodes back to experiences
+      return episodes.map((ep) => this.episodeToExperience(ep)).filter((exp): exp is Experience => exp !== null);
+    } catch (error) {
+      console.error('Failed to retrieve similar experiences:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Sync all current replay buffer experiences to ReflexionMemory
+   */
+  async syncToReflexionMemory(): Promise<void> {
+    if (!this.reflexionMemory || this.replayBuffer.length === 0) {
+      return;
+    }
+
+    try {
+      await this.storeExperiencesAsEpisodes(this.replayBuffer);
+    } catch (error) {
+      console.error('Failed to sync experiences to ReflexionMemory:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get task statistics from ReflexionMemory for a specific action
+   */
+  async getActionStatistics(action: QAction): Promise<{
+    totalAttempts: number;
+    successRate: number;
+    averageReward: number;
+  } | null> {
+    if (!this.reflexionMemory) {
+      return null;
+    }
+
+    try {
+      const stats = await this.reflexionMemory.getTaskStats(action);
+      return stats;
+    } catch (error) {
+      console.error('Failed to get action statistics:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Store experiences as episodes in ReflexionMemory
+   */
+  private async storeExperiencesAsEpisodes(experiences: Experience[]): Promise<void> {
+    if (!this.reflexionMemory) {
+      return;
+    }
+
+    const episodes: Episode[] = experiences.map(exp => this.experienceToEpisode(exp));
+
+    // Store episodes in parallel batches to avoid overwhelming the database
+    const batchSize = 10;
+    for (let i = 0; i < episodes.length; i += batchSize) {
+      const batch = episodes.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(episode => this.reflexionMemory!.storeEpisode(episode))
+      );
+    }
+  }
+
+  /**
+   * Convert Experience to Episode for ReflexionMemory storage
+   */
+  private experienceToEpisode(experience: Experience): Episode {
+    const success = experience.reward > 0.5;
+
+    return {
+      task: experience.action,
+      input: JSON.stringify(experience.state),
+      output: JSON.stringify(experience.nextState),
+      reward: experience.reward,
+      success,
+      sessionId: this.sessionId,
+      metadata: {
+        timestamp: experience.timestamp,
+        epsilon: this.epsilon,
+        qValue: this.getQValue(experience.state, experience.action),
+      },
+    };
+  }
+
+  /**
+   * Convert Episode back to Experience
+   */
+  private episodeToExperience(episode: Episode): Experience | null {
+    try {
+      const state = JSON.parse(episode.input) as QState;
+      const nextState = JSON.parse(episode.output) as QState;
+      const action = episode.task as QAction;
+
+      return {
+        state,
+        action,
+        reward: episode.reward,
+        nextState,
+        timestamp: (episode.metadata?.['timestamp'] as number) ?? Date.now(),
+      };
+    } catch (error) {
+      console.error('Failed to parse episode:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Convert state to query text for similarity search
+   */
+  private stateToQueryText(state: QState): string {
+    return `${state.timeOfDay} ${state.dayType} genres:${state.recentGenres.join(',')} completion:${state.avgCompletionRate}% sessions:${state.sessionCount}`;
   }
 
   /**
