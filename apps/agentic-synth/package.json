@@ -65,8 +65,8 @@
     "zod": "^4.1.13"
   },
   "peerDependencies": {
-    "agentic-robotics": "^1.0.0",
-    "midstreamer": "^1.0.0",
+    "agentic-robotics": "^0.2.4",
+    "midstreamer": "^0.2.4",
     "ruvector": "^0.1.26"
   },
   "peerDependenciesMeta": {
