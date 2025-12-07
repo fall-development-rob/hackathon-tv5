@@ -5,7 +5,7 @@
  * Solving the 45-minute decision problem with a 20-year data moat
  */
 
-// Types (backward compatibility - kept for existing code)
+// Types
 export * from './types/index.js';
 
 // Schemas (Zod validation)
@@ -25,7 +25,7 @@ export * from './usecases/recommendations/PersonalizedFeed.js';
 export * from './usecases/user/UpdatePreferences.js';
 export * from './usecases/social/CreateGroupSession.js';
 
-// Services (legacy - will be refactored to use cases)
+// Services
 export * from './services/UserPreferenceService.js';
 export * from './services/SemanticSearchService.js';
 export * from './services/GroupRecommendationService.js';
