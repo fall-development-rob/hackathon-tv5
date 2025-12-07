@@ -1,0 +1,51 @@
+{
+  "name": "@media-gateway/database",
+  "version": "0.1.0",
+  "description": "Database layer with AgentDB cognitive memory and RuVector embeddings for 20-year data moat",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./agentdb": {
+      "types": "./dist/agentdb/index.d.ts",
+      "import": "./dist/agentdb/index.js"
+    },
+    "./ruvector": {
+      "types": "./dist/ruvector/index.d.ts",
+      "import": "./dist/ruvector/index.js"
+    }
+  },
+  "dependencies": {
+    "@media-gateway/core": "workspace:*",
+    "agentdb": "^2.0.0-alpha",
+    "ruvector": "^0.1.31"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "agentdb",
+    "ruvector",
+    "vector-database",
+    "cognitive-memory",
+    "data-moat"
+  ],
+  "license": "Apache-2.0"
+}
