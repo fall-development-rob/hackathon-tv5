@@ -262,8 +262,10 @@ describe('PreferencesEntity', () => {
   describe('getCurrentTemporalPattern', () => {
     it('should return pattern matching current time', () => {
       const friday8pm = new Date();
-      friday8pm.setDay(5); // Friday
-      friday8pm.setHours(20); // 8 PM
+      // Set to next Friday at 8 PM
+      const daysUntilFriday = (5 - friday8pm.getDay() + 7) % 7;
+      friday8pm.setDate(friday8pm.getDate() + daysUntilFriday);
+      friday8pm.setHours(20, 0, 0, 0); // 8 PM
 
       // Mock current time by creating pattern for current actual time
       const now = new Date();

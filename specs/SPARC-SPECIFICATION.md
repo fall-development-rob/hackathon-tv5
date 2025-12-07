@@ -368,7 +368,1050 @@ year_16_20:
 
 ---
 
-## 3. FUNCTIONAL REQUIREMENTS
+## 3. ADVANCED ALGORITHMS
+
+This section details the core algorithmic innovations that power our intelligent media gateway platform. These algorithms provide competitive advantages through superior personalization, recommendation quality, and explainability.
+
+### 3.1 LoRA Personalization Engine
+
+#### Overview
+
+The Low-Rank Adaptation (LoRA) Personalization Engine enables sub-5ms personalization by maintaining lightweight, per-user model adapters that capture individual preference nuances without retraining the base model.
+
+#### Algorithm Specification
+
+**Core Formula:**
+```
+W' = W + (α/r) * B @ A
+
+Where:
+  W  = Base model weights (frozen)
+  W' = Personalized model weights
+  α  = Learning rate (0.001 default)
+  r  = Rank reduction factor (8-16 typical)
+  B  = Low-rank matrix B (d × r)
+  A  = Low-rank matrix A (r × k)
+  @  = Matrix multiplication
+```
+
+**Architecture:**
+```yaml
+lora_configuration:
+  base_model:
+    type: "transformer"
+    parameters: 175M
+    frozen: true
+    dimensions: 768
+
+  user_adapters:
+    rank: 16
+    alpha: 0.001
+    storage_per_user: ~10KB
+    parameters_per_adapter: 12,288
+    total_users_supported: 10M+
+
+  adapter_injection_points:
+    - query_projection
+    - key_projection
+    - value_projection
+    - feed_forward_up
+    - feed_forward_down
+
+  training:
+    batch_size: 32
+    learning_rate: 0.0001
+    gradient_accumulation: 4
+    warmup_steps: 100
+    max_steps: 1000
+```
+
+**Anti-Forgetting Mechanism (EWC++):**
+```python
+# Elastic Weight Consolidation Plus
+def ewc_plus_loss(new_params, old_params, fisher_matrix, λ=0.4):
+    """
+    Prevents catastrophic forgetting when updating user preferences
+
+    Args:
+        new_params: Updated adapter parameters
+        old_params: Previous adapter parameters
+        fisher_matrix: Importance weights for each parameter
+        λ: Regularization strength (0.4 optimal for media preferences)
+
+    Returns:
+        Regularization loss preventing forgetting
+    """
+    forgetting_loss = 0
+    for (name, new_p), (_, old_p), (_, fisher) in zip(
+        new_params.items(),
+        old_params.items(),
+        fisher_matrix.items()
+    ):
+        # Weighted L2 penalty on parameter changes
+        forgetting_loss += (fisher * (new_p - old_p).pow(2)).sum()
+
+    return λ * forgetting_loss
+
+# Total loss combines recommendation quality + anti-forgetting
+total_loss = recommendation_loss + ewc_plus_loss(...)
+```
+
+**Pseudocode:**
+```python
+class LoRAPersonalizationEngine:
+    def __init__(self, base_model, rank=16, alpha=0.001):
+        self.base_model = base_model  # Frozen transformer
+        self.rank = rank
+        self.alpha = alpha
+        self.user_adapters = {}  # user_id -> LoRAAdapter
+        self.fisher_matrices = {}  # user_id -> FisherMatrix
+
+    def get_or_create_adapter(self, user_id):
+        """Lazy initialization of user adapters"""
+        if user_id not in self.user_adapters:
+            # Initialize with small random values
+            self.user_adapters[user_id] = LoRAAdapter(
+                rank=self.rank,
+                input_dim=self.base_model.hidden_size,
+                output_dim=self.base_model.hidden_size
+            )
+            self.fisher_matrices[user_id] = None
+        return self.user_adapters[user_id]
+
+    def personalized_forward(self, user_id, content_embedding):
+        """
+        Forward pass with user-specific adaptation
+
+        Time Complexity: O(d*r) where d=768, r=16
+        Expected latency: <5ms on CPU, <1ms on GPU
+        """
+        adapter = self.get_or_create_adapter(user_id)
+
+        # Base model inference (frozen, can be cached)
+        base_output = self.base_model(content_embedding)
+
+        # Low-rank adaptation: (α/r) * B @ A @ x
+        lora_delta = (self.alpha / self.rank) * adapter.forward(base_output)
+
+        # Combined output
+        return base_output + lora_delta
+
+    def update_user_preferences(self, user_id, positive_items, negative_items):
+        """
+        Online learning from user interactions
+
+        Complexity: O(batch_size * d * r)
+        Expected time: <100ms for 32 items
+        """
+        adapter = self.get_or_create_adapter(user_id)
+        old_params = adapter.clone_parameters()
+
+        # Compute Fisher information before update
+        if self.fisher_matrices[user_id] is None:
+            self.fisher_matrices[user_id] = compute_fisher_matrix(
+                adapter, positive_items
+            )
+
+        # Standard gradient descent on adapter only
+        for epoch in range(5):  # Quick online updates
+            loss = contrastive_loss(
+                adapter, positive_items, negative_items
+            )
+
+            # Add EWC++ regularization to prevent forgetting
+            if self.fisher_matrices[user_id] is not None:
+                loss += ewc_plus_loss(
+                    adapter.parameters(),
+                    old_params,
+                    self.fisher_matrices[user_id],
+                    λ=0.4
+                )
+
+            loss.backward()
+            optimizer.step()
+
+        # Update Fisher matrix with exponential moving average
+        new_fisher = compute_fisher_matrix(adapter, positive_items)
+        self.fisher_matrices[user_id] = 0.9 * self.fisher_matrices[user_id] + 0.1 * new_fisher
+```
+
+**Complexity Analysis:**
+```yaml
+time_complexity:
+  forward_pass:
+    base_model: O(d²) ~ 590K ops (amortized via caching)
+    lora_adaptation: O(d*r) ~ 12K ops
+    total_per_user: O(d*r) ~ 12K ops
+    latency: <5ms CPU, <1ms GPU
+
+  adapter_update:
+    gradient_computation: O(batch_size * d * r)
+    fisher_update: O(d * r)
+    total: O(32 * 768 * 16) ~ 393K ops
+    latency: <100ms
+
+  cold_start:
+    new_user_initialization: O(d * r) ~ 12K ops
+    latency: <2ms
+
+space_complexity:
+  base_model: 175M params × 4 bytes = 700MB (shared)
+  per_user_adapter: (2 * d * r) params × 4 bytes = 98KB
+  fisher_matrix: (2 * d * r) × 4 bytes = 98KB
+  total_per_user: ~200KB (10MB for 50 users)
+
+  storage_optimization:
+    quantized_adapters: 200KB → 50KB (4-bit quantization)
+    sparse_fisher: 98KB → 10KB (top-k sparsity)
+    compressed_total: ~60KB per user
+```
+
+**Implementation Notes:**
+```yaml
+deployment:
+  inference_server:
+    framework: "PyTorch with TorchScript JIT"
+    hardware: "CPU-optimized (AVX-512)"
+    batching: "Dynamic batching (max 128 users)"
+    caching: "Base model outputs cached per content"
+
+  adapter_storage:
+    database: "AgentDB vector store"
+    serialization: "Protocol Buffers"
+    compression: "Zstandard level 3"
+    backup: "Daily snapshots to S3"
+
+  cold_start_handling:
+    new_users: "Initialize from demographic cluster centroid"
+    fallback: "Content-based filtering for first 10 interactions"
+    bootstrap: "Active learning to quickly gather preferences"
+
+monitoring:
+  metrics:
+    - adapter_inference_latency_p95: <5ms
+    - adapter_update_latency_p95: <100ms
+    - memory_per_user: <60KB
+    - cache_hit_rate: >90%
+    - cold_start_quality: >0.65 nDCG@10
+
+  alerts:
+    - latency_spike: p95 > 10ms
+    - memory_leak: growth > 10% per hour
+    - quality_degradation: nDCG drop > 5%
+```
+
+**Performance Targets:**
+```yaml
+personalization_quality:
+  warm_users_10_interactions: 0.70 nDCG@10
+  warm_users_100_interactions: 0.82 nDCG@10
+  warm_users_1000_interactions: 0.91 nDCG@10
+
+latency_targets:
+  p50_inference: <2ms
+  p95_inference: <5ms
+  p99_inference: <10ms
+
+scalability:
+  users_per_server: 100K active users
+  adapters_in_memory: 50K (hot set)
+  adapters_on_disk: 10M total users
+
+efficiency:
+  vs_full_finetuning: 1000x faster
+  vs_online_training: 100x faster
+  vs_cold_recommendations: 25% quality improvement
+```
+
+---
+
+### 3.2 Reciprocal Rank Fusion (RRF) Hybrid Recommender
+
+#### Overview
+
+RRF combines multiple recommendation strategies (collaborative filtering, content-based, graph-based, contextual) into a unified ranking that leverages the strengths of each approach while mitigating individual weaknesses.
+
+#### Algorithm Specification
+
+**Core Formula:**
+```
+RRF_score(item) = Σ [weight_i / (k + rank_i)]
+                  i ∈ strategies
+
+Where:
+  strategies = {collaborative, content_based, graph_based, contextual}
+  weight_i = Importance weight for strategy i
+  rank_i = Rank of item in strategy i's results
+  k = Constant to reduce impact of high ranks (60 typical)
+```
+
+**Strategy Configuration:**
+```yaml
+recommendation_strategies:
+  collaborative_filtering:
+    weight: 0.35
+    method: "Matrix Factorization (ALS)"
+    features:
+      - user_watch_history
+      - user_ratings
+      - implicit_feedback
+    latent_factors: 128
+    regularization: 0.01
+
+  content_based:
+    weight: 0.25
+    method: "BERT Embeddings + Cosine Similarity"
+    features:
+      - genre_vectors
+      - cast_crew_embeddings
+      - plot_embeddings
+      - mood_tags
+    embedding_dimension: 768
+    similarity_metric: "cosine"
+
+  graph_based:
+    weight: 0.30
+    method: "Personalized PageRank"
+    graph_structure:
+      nodes: [users, content, genres, actors, directors]
+      edges: [watched, rated, similar_to, acted_in, directed]
+    teleport_probability: 0.15
+    max_iterations: 100
+
+  contextual:
+    weight: 0.10
+    method: "Contextual Bandits (LinUCB)"
+    context_features:
+      - time_of_day
+      - day_of_week
+      - device_type
+      - location
+      - available_time
+      - social_context
+    exploration_factor: 0.2
+
+fusion_parameters:
+  k_constant: 60
+  top_k_per_strategy: 100
+  final_output_size: 20
+  min_strategies_required: 2
+```
+
+**Pseudocode:**
+```python
+class ReciprocalRankFusion:
+    def __init__(self, k=60):
+        self.k = k
+        self.strategies = {
+            'collaborative': CollaborativeFilter(weight=0.35),
+            'content_based': ContentBasedFilter(weight=0.25),
+            'graph_based': GraphBasedFilter(weight=0.30),
+            'contextual': ContextualBandits(weight=0.10)
+        }
+
+    def recommend(self, user_id, context, top_n=20):
+        """
+        Generate hybrid recommendations using RRF
+
+        Time Complexity: O(S * N log N) where S=strategies, N=candidates
+        Expected latency: <50ms for 4 strategies × 100 items each
+        """
+        # Step 1: Get ranked lists from each strategy
+        strategy_rankings = {}
+        for name, strategy in self.strategies.items():
+            try:
+                # Each strategy returns [(item_id, score, rank), ...]
+                rankings = strategy.get_rankings(
+                    user_id=user_id,
+                    context=context,
+                    top_k=100
+                )
+                strategy_rankings[name] = rankings
+            except Exception as e:
+                # Graceful degradation if strategy fails
+                logger.warning(f"Strategy {name} failed: {e}")
+                continue
+
+        # Step 2: Collect all candidate items
+        all_items = set()
+        for rankings in strategy_rankings.values():
+            all_items.update([item_id for item_id, _, _ in rankings])
+
+        # Step 3: Compute RRF scores
+        rrf_scores = {}
+        for item_id in all_items:
+            score = 0.0
+            for name, rankings in strategy_rankings.items():
+                weight = self.strategies[name].weight
+
+                # Find item's rank in this strategy (or max rank if not present)
+                rank = self._get_rank(item_id, rankings)
+
+                # RRF contribution: weight / (k + rank)
+                score += weight / (self.k + rank)
+
+            rrf_scores[item_id] = score
+
+        # Step 4: Sort by RRF score and return top-N
+        sorted_items = sorted(
+            rrf_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        return sorted_items[:top_n]
+
+    def _get_rank(self, item_id, rankings):
+        """Get item's rank in a strategy's results"""
+        for i, (iid, score, rank) in enumerate(rankings):
+            if iid == item_id:
+                return rank
+        # If item not in this strategy's results, assign max rank
+        return len(rankings) + 1
+
+    def explain_score(self, item_id, user_id, context):
+        """
+        Generate explanation for why item was recommended
+
+        Returns breakdown of each strategy's contribution
+        """
+        explanations = {}
+        total_score = 0.0
+
+        for name, strategy in self.strategies.items():
+            rankings = strategy.get_rankings(user_id, context, top_k=100)
+            rank = self._get_rank(item_id, rankings)
+            weight = strategy.weight
+            contribution = weight / (self.k + rank)
+
+            explanations[name] = {
+                'rank': rank,
+                'weight': weight,
+                'contribution': contribution,
+                'percentage': 0.0  # Will compute after total
+            }
+            total_score += contribution
+
+        # Compute percentage contribution
+        for name in explanations:
+            explanations[name]['percentage'] = (
+                explanations[name]['contribution'] / total_score * 100
+            )
+
+        return {
+            'total_score': total_score,
+            'strategy_breakdown': explanations
+        }
+```
+
+**Complexity Analysis:**
+```yaml
+time_complexity:
+  strategy_execution:
+    collaborative: O(N log N) ~ 100 items
+    content_based: O(M * d) ~ 10K items × 768 dims
+    graph_based: O(E + V log V) ~ 1M edges
+    contextual: O(K * d²) ~ 100 arms × 768²
+    parallel_execution: max(strategies) ~ 50ms
+
+  rrf_fusion:
+    candidate_collection: O(S * N) ~ 4 × 100
+    score_computation: O(C * S) ~ 300 candidates × 4
+    sorting: O(C log C) ~ 300 log 300
+    total_fusion: O(C * S + C log C) ~ 2K ops
+    latency: <5ms
+
+  end_to_end: <55ms (parallel strategies + fusion)
+
+space_complexity:
+  strategy_outputs: S × N items = 4 × 100 = 400 items
+  candidate_set: ~300 unique items
+  rrf_scores: 300 floats = 1.2KB
+  total_memory: <10KB per request
+```
+
+**Implementation Notes:**
+```yaml
+optimization_techniques:
+  parallel_strategy_execution:
+    method: "ThreadPoolExecutor with 4 workers"
+    timeout_per_strategy: 100ms
+    fallback: "Continue with available strategies"
+
+  caching:
+    collaborative_factors: "1 hour TTL"
+    content_embeddings: "24 hours TTL"
+    graph_structure: "Incremental updates"
+    contextual_models: "Real-time updates"
+
+  precomputation:
+    popular_items: "Precompute for cold-start users"
+    genre_centroids: "Cache for content-based filtering"
+    graph_neighborhoods: "Precompute 2-hop neighborhoods"
+
+monitoring:
+  metrics:
+    - rrf_latency_p95: <55ms
+    - strategy_failure_rate: <1%
+    - cache_hit_rate: >85%
+    - diversity_score: >0.7 (ILS metric)
+    - coverage: >15% of catalog per day
+
+  ab_testing:
+    - test_weight_variations: "A/B test weight combinations"
+    - test_k_constant: "Optimize k ∈ [40, 80]"
+    - test_strategy_subsets: "Ablation studies"
+```
+
+**Performance Targets:**
+```yaml
+recommendation_quality:
+  ndcg_at_10: >0.78
+  precision_at_5: >0.65
+  recall_at_20: >0.45
+  diversity_ils: >0.70
+  novelty_score: >0.60
+
+latency_targets:
+  p50: <30ms
+  p95: <55ms
+  p99: <80ms
+
+scalability:
+  requests_per_second: 10K
+  concurrent_users: 100K
+  catalog_size: 500K items
+```
+
+---
+
+### 3.3 Maximal Marginal Relevance (MMR) Diversity Filter
+
+#### Overview
+
+MMR prevents echo chamber recommendations by balancing relevance with diversity. It ensures users are exposed to varied content rather than repetitive similar items.
+
+#### Algorithm Specification
+
+**Core Formula:**
+```
+MMR_score(item) = λ * relevance(item, query) - (1-λ) * max_similarity(item, selected_items)
+
+Where:
+  λ = Tunable parameter (0.85 default)
+  relevance = Initial ranking score from RRF
+  max_similarity = Maximum cosine similarity to already-selected items
+  selected_items = Set of items already in recommendation list
+```
+
+**Iterative Selection Process:**
+```python
+def maximal_marginal_relevance(
+    candidate_items,      # Items from RRF with scores
+    λ=0.85,              # Relevance vs diversity trade-off
+    top_n=20,            # Final recommendation list size
+    embedding_dim=768    # Content embedding dimension
+):
+    """
+    Select diverse yet relevant recommendations using MMR
+
+    Time Complexity: O(n * k * d) where n=candidates, k=output, d=dimensions
+    Expected latency: <10ms for 300 candidates → 20 items
+
+    Args:
+        candidate_items: List of (item_id, relevance_score, embedding)
+        λ: Weight for relevance (0.85 = 85% relevance, 15% diversity)
+        top_n: Number of items to select
+        embedding_dim: Dimension of content embeddings
+
+    Returns:
+        List of (item_id, mmr_score) tuples
+    """
+    selected = []
+    remaining = candidate_items.copy()
+
+    # Step 1: Select highest relevance item first
+    first_item = max(remaining, key=lambda x: x[1])
+    selected.append(first_item)
+    remaining.remove(first_item)
+
+    # Step 2: Iteratively select items maximizing MMR
+    while len(selected) < top_n and remaining:
+        mmr_scores = []
+
+        for item_id, relevance, embedding in remaining:
+            # Compute maximum similarity to selected items
+            max_sim = 0.0
+            for sel_id, sel_score, sel_embedding in selected:
+                similarity = cosine_similarity(embedding, sel_embedding)
+                max_sim = max(max_sim, similarity)
+
+            # MMR score combines relevance and diversity
+            mmr = λ * relevance - (1 - λ) * max_sim
+            mmr_scores.append((item_id, mmr, embedding))
+
+        # Select item with highest MMR score
+        best_item = max(mmr_scores, key=lambda x: x[1])
+        selected.append(best_item)
+        remaining.remove((best_item[0], best_item[1], best_item[2]))
+
+    return [(item_id, score) for item_id, score, _ in selected]
+```
+
+**Detailed Implementation:**
+```python
+class MMRDiversityFilter:
+    def __init__(self, λ=0.85, embedding_cache_size=10000):
+        self.λ = λ
+        self.embedding_cache = LRUCache(embedding_cache_size)
+
+    def apply_diversity_filter(self, rrf_results, top_n=20):
+        """
+        Apply MMR diversity filtering to RRF results
+
+        Time Complexity: O(n * k * d)
+        - n = len(rrf_results) ~ 100-300 items
+        - k = top_n ~ 20 output items
+        - d = embedding_dim ~ 768
+        Total: ~4.6M ops for 300→20 with d=768
+        Latency: <10ms on modern CPU
+        """
+        # Step 1: Fetch embeddings for all candidates
+        candidates = []
+        for item_id, rrf_score in rrf_results:
+            embedding = self._get_embedding(item_id)
+            candidates.append((item_id, rrf_score, embedding))
+
+        # Step 2: Normalize RRF scores to [0, 1]
+        max_score = max(score for _, score, _ in candidates)
+        min_score = min(score for _, score, _ in candidates)
+        candidates = [
+            (item_id, (score - min_score) / (max_score - min_score + 1e-8), emb)
+            for item_id, score, emb in candidates
+        ]
+
+        # Step 3: Apply MMR selection
+        selected = []
+        remaining = candidates.copy()
+
+        # Always select top RRF item first
+        first = max(remaining, key=lambda x: x[1])
+        selected.append(first)
+        remaining.remove(first)
+
+        # Iterative MMR selection
+        for _ in range(top_n - 1):
+            if not remaining:
+                break
+
+            best_item = None
+            best_mmr = -float('inf')
+
+            for item_id, relevance, embedding in remaining:
+                # Compute diversity penalty
+                max_similarity = max(
+                    cosine_similarity(embedding, sel_emb)
+                    for _, _, sel_emb in selected
+                )
+
+                # MMR score
+                mmr = self.λ * relevance - (1 - self.λ) * max_similarity
+
+                if mmr > best_mmr:
+                    best_mmr = mmr
+                    best_item = (item_id, relevance, embedding)
+
+            if best_item:
+                selected.append(best_item)
+                remaining.remove(best_item)
+
+        # Return with MMR scores
+        return [
+            {
+                'item_id': item_id,
+                'original_score': relevance,
+                'mmr_position': i + 1
+            }
+            for i, (item_id, relevance, _) in enumerate(selected)
+        ]
+
+    def _get_embedding(self, item_id):
+        """Fetch content embedding with caching"""
+        if item_id in self.embedding_cache:
+            return self.embedding_cache[item_id]
+
+        # Fetch from database/vector store
+        embedding = self._fetch_from_agentdb(item_id)
+        self.embedding_cache[item_id] = embedding
+        return embedding
+
+    def _fetch_from_agentdb(self, item_id):
+        """Fetch embedding from AgentDB vector store"""
+        # Use AgentDB's 150x faster vector search
+        result = agentdb.get_vector(
+            collection="content_embeddings",
+            item_id=item_id
+        )
+        return result.embedding
+
+    def tune_lambda(self, user_id, interaction_history):
+        """
+        Personalize λ parameter based on user's diversity preference
+
+        Users who explore diverse content → lower λ (more diversity)
+        Users who stay in comfort zone → higher λ (more relevance)
+        """
+        # Compute user's historical diversity score
+        watched_items = interaction_history['watched']
+        diversity_score = compute_intra_list_similarity(watched_items)
+
+        # Adaptive λ based on user behavior
+        if diversity_score < 0.3:  # High diversity seeker
+            return 0.75  # 75% relevance, 25% diversity
+        elif diversity_score < 0.5:  # Moderate diversity
+            return 0.85  # 85% relevance, 15% diversity (default)
+        else:  # Prefers similar content
+            return 0.92  # 92% relevance, 8% diversity
+
+def cosine_similarity(vec_a, vec_b):
+    """
+    Compute cosine similarity between two vectors
+
+    Time Complexity: O(d) where d=embedding dimension
+    """
+    dot_product = np.dot(vec_a, vec_b)
+    norm_a = np.linalg.norm(vec_a)
+    norm_b = np.linalg.norm(vec_b)
+    return dot_product / (norm_a * norm_b + 1e-8)
+
+def compute_intra_list_similarity(items):
+    """
+    Compute average pairwise similarity within a list
+
+    Returns diversity score ∈ [0, 1]
+    0 = highly diverse, 1 = very similar
+    """
+    if len(items) < 2:
+        return 0.0
+
+    embeddings = [get_embedding(item) for item in items]
+    similarities = []
+
+    for i in range(len(embeddings)):
+        for j in range(i + 1, len(embeddings)):
+            sim = cosine_similarity(embeddings[i], embeddings[j])
+            similarities.append(sim)
+
+    return np.mean(similarities)
+```
+
+**Complexity Analysis:**
+```yaml
+time_complexity:
+  embedding_fetch:
+    cache_hit: O(1) ~ <0.01ms
+    cache_miss: O(log n) ~ <1ms (AgentDB lookup)
+    total: O(n) for n candidates
+
+  mmr_iteration:
+    per_candidate: O(k * d) ~ 20 × 768 = 15K ops
+    k_iterations: O(n * k² * d) worst case
+    optimized: O(n * k * d) ~ 300 × 20 × 768 = 4.6M ops
+    latency: <10ms on CPU, <2ms on GPU
+
+  total_pipeline:
+    rrf: <55ms
+    mmr: <10ms
+    end_to_end: <65ms
+
+space_complexity:
+  candidate_embeddings: n × d × 4 bytes = 300 × 768 × 4 = 900KB
+  similarity_matrix: k × k × 4 bytes = 20 × 20 × 4 = 1.6KB
+  total: <1MB per request
+```
+
+**Implementation Notes:**
+```yaml
+optimization:
+  vectorization:
+    method: "NumPy/BLAS for batch similarity computation"
+    speedup: "10x vs naive Python loops"
+
+  caching:
+    embedding_cache: "LRU cache with 10K items"
+    similarity_cache: "Cache pairwise similarities"
+    ttl: "1 hour for embeddings"
+
+  approximation:
+    method: "Locality-Sensitive Hashing for large candidate sets"
+    threshold: "Apply for n > 1000 candidates"
+    speedup: "100x for large catalogs"
+
+monitoring:
+  metrics:
+    - mmr_latency_p95: <10ms
+    - diversity_score_ils: >0.70
+    - user_exploration_rate: >0.40
+    - cache_hit_rate: >90%
+
+  ab_testing:
+    - lambda_values: [0.75, 0.80, 0.85, 0.90]
+    - adaptive_vs_fixed: "Personalized λ vs constant"
+    - mmr_vs_no_diversity: "Impact on engagement"
+```
+
+**Performance Targets:**
+```yaml
+diversity_metrics:
+  intra_list_similarity: <0.40 (more diversity)
+  genre_coverage: >5 genres in top-20
+  release_year_spread: >15 years
+
+quality_metrics:
+  ndcg_at_10: >0.75 (slight drop from RRF acceptable)
+  click_through_rate: >8%
+  user_satisfaction: >4.2/5
+
+latency_targets:
+  p50: <5ms
+  p95: <10ms
+  p99: <15ms
+```
+
+---
+
+### 3.4 Explainable Recommendations
+
+#### Overview
+
+Provide natural language explanations for why each item was recommended, increasing user trust and enabling better feedback loops.
+
+#### Explanation Generation
+
+**Reason Codes:**
+```yaml
+explanation_types:
+  similar_to:
+    template: "Because you watched {title}"
+    confidence_threshold: 0.80
+    max_references: 3
+
+  trending:
+    template: "Trending with people like you"
+    criteria: "Top 10% popularity in user's demographic"
+
+  friend_watched:
+    template: "{friend_name} watched this"
+    privacy: "Only show with user consent"
+
+  mood_match:
+    template: "Matches your {mood} mood"
+    moods: [relaxed, excited, thoughtful, escapist, social]
+
+  new_release:
+    template: "New on {platform}"
+    recency: "Released within 30 days"
+
+  award_winning:
+    template: "Winner of {award}"
+    awards: [Oscar, Emmy, Golden Globe, BAFTA]
+
+  critic_acclaimed:
+    template: "{score}% on Rotten Tomatoes"
+    threshold: ">85% critic score"
+
+  hidden_gem:
+    template: "Underrated gem you might have missed"
+    criteria: "High quality, low popularity"
+```
+
+**Explanation Ranking:**
+```python
+def generate_explanation(item_id, user_id, rrf_breakdown, mmr_score):
+    """
+    Generate natural language explanation for recommendation
+
+    Returns ranked list of explanation snippets
+    """
+    explanations = []
+
+    # 1. Similar to watched content
+    similar_items = find_similar_watched(item_id, user_id, top_k=3)
+    if similar_items:
+        for similar in similar_items[:2]:
+            explanations.append({
+                'type': 'similar_to',
+                'text': f"Because you watched {similar.title}",
+                'confidence': similar.similarity_score,
+                'priority': 1
+            })
+
+    # 2. Friend activity
+    friends_who_watched = get_friends_watched(item_id, user_id)
+    if friends_who_watched:
+        friend = friends_who_watched[0]
+        explanations.append({
+            'type': 'friend_watched',
+            'text': f"{friend.name} watched this",
+            'confidence': 0.90,
+            'priority': 2
+        })
+
+    # 3. Trending
+    if is_trending(item_id, user_demographic):
+        explanations.append({
+            'type': 'trending',
+            'text': "Trending with people like you",
+            'confidence': 0.85,
+            'priority': 3
+        })
+
+    # 4. Mood match
+    user_mood = detect_current_mood(user_id)
+    item_mood = get_item_mood(item_id)
+    if mood_similarity(user_mood, item_mood) > 0.75:
+        explanations.append({
+            'type': 'mood_match',
+            'text': f"Matches your {user_mood} mood",
+            'confidence': mood_similarity(user_mood, item_mood),
+            'priority': 4
+        })
+
+    # 5. Awards/Quality
+    awards = get_awards(item_id)
+    if awards:
+        explanations.append({
+            'type': 'award_winning',
+            'text': f"Winner of {awards[0]}",
+            'confidence': 0.95,
+            'priority': 5
+        })
+
+    # Sort by priority and confidence
+    explanations.sort(key=lambda x: (x['priority'], -x['confidence']))
+
+    # Return top 2 explanations
+    return {
+        'primary': explanations[0]['text'],
+        'secondary': explanations[1]['text'] if len(explanations) > 1 else None,
+        'all_reasons': explanations
+    }
+```
+
+**Complexity Analysis:**
+```yaml
+time_complexity:
+  similar_items_lookup: O(log n) ~ AgentDB vector search
+  friend_activity_check: O(f) ~ number of friends
+  trending_check: O(1) ~ cached trending list
+  mood_detection: O(1) ~ cached user state
+  total: O(log n + f) ~ <5ms
+
+space_complexity:
+  explanation_data: ~1KB per item
+  cached_trending: ~100KB
+  total: <2KB per recommendation
+```
+
+---
+
+### 3.5 Context-Aware Filtering
+
+#### Overview
+
+Adapt recommendations based on real-time context: time-of-day, device, available time, and social setting.
+
+**Context Features:**
+```yaml
+context_dimensions:
+  temporal:
+    time_of_day:
+      morning: [6am-12pm] → "energizing, light content"
+      afternoon: [12pm-6pm] → "varied content"
+      evening: [6pm-10pm] → "prime time, popular shows"
+      night: [10pm-2am] → "comfort viewing, familiar content"
+
+    day_of_week:
+      weekday: "shorter episodes, 30-45 min"
+      weekend: "movies, binge-worthy series"
+
+  device:
+    tv: "high production value, visual spectacle"
+    mobile: "shorter content, can pause easily"
+    tablet: "balanced, versatile content"
+
+  available_time:
+    "<30min": "short episodes, YouTube content"
+    "30-60min": "sitcoms, documentaries"
+    "1-2hr": "movies, 2-episode blocks"
+    ">2hr": "movie marathons, season binges"
+
+  social_context:
+    solo: "personal preferences, niche content"
+    partner: "overlapping interests, date night"
+    family: "age-appropriate, broad appeal"
+    friends: "social viewing, popular content"
+```
+
+**Implementation:**
+```python
+class ContextAwareFilter:
+    def apply_context(self, recommendations, context):
+        """
+        Filter and re-rank based on context
+
+        Time Complexity: O(n) where n = recommendation count
+        Latency: <5ms
+        """
+        filtered = []
+
+        for item in recommendations:
+            # Duration filtering
+            if not self._matches_available_time(item, context['available_time']):
+                continue
+
+            # Device optimization
+            device_score = self._device_score(item, context['device'])
+
+            # Time-of-day relevance
+            time_score = self._time_relevance(item, context['time_of_day'])
+
+            # Social context fit
+            social_score = self._social_fit(item, context['social_context'])
+
+            # Combined context score
+            context_score = (
+                0.40 * device_score +
+                0.30 * time_score +
+                0.30 * social_score
+            )
+
+            # Adjust original score
+            adjusted_score = item['score'] * context_score
+
+            filtered.append({
+                **item,
+                'context_adjusted_score': adjusted_score,
+                'context_explanation': self._explain_context(
+                    device_score, time_score, social_score
+                )
+            })
+
+        # Re-sort by context-adjusted score
+        filtered.sort(key=lambda x: x['context_adjusted_score'], reverse=True)
+        return filtered
+```
+
+**Performance Targets:**
+```yaml
+latency: <5ms
+accuracy_improvement: +12% CTR with context
+user_satisfaction: +0.3 points (5-point scale)
+```
+
+---
+
+## 4. FUNCTIONAL REQUIREMENTS
 
 ### 3.1 Core User Features
 
