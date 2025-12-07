@@ -7,6 +7,7 @@
  * Architecture:
  * - agentic-flow: Neural training, pattern recognition, swarm coordination
  * - agentdb: ReflexionMemory for episode storage, SkillLibrary for consolidation
+ * - ReasoningBank: Episode-based learning and pattern storage (optional)
  *
  * MCP Integration:
  * When running via Claude Code, actual MCP calls (mcp__claude_flow__*) are made at runtime.
@@ -14,6 +15,42 @@
  */
 
 import type { WatchEvent } from '@media-gateway/core';
+
+// Optional ReasoningBank imports - only loaded if provided
+type ReasoningBankPattern = {
+  sessionId: string;
+  task: string;
+  input?: string;
+  output?: string;
+  critique?: string;
+  success: boolean;
+  reward: number;
+  latencyMs?: number;
+  tokensUsed?: number;
+};
+
+type ReasoningBankOptions = {
+  k?: number;
+  minReward?: number;
+  onlySuccesses?: boolean;
+  onlyFailures?: boolean;
+};
+
+type ReasoningBankInstance = {
+  storePattern(pattern: ReasoningBankPattern): Promise<number>;
+  retrievePatterns(query: string, options?: ReasoningBankOptions): Promise<any[]>;
+  learnStrategy(task: string): Promise<{
+    patterns: any[];
+    causality: any;
+    confidence: number;
+    recommendation: string;
+  }>;
+  autoConsolidate(
+    minUses?: number,
+    minSuccessRate?: number,
+    lookbackDays?: number
+  ): Promise<{ skillsCreated: number }>;
+};
 
 /**
  * Training pattern types for Claude Flow neural training
@@ -28,6 +65,7 @@ export interface NeuralTrainingConfig {
   minEpochs: number;
   maxEpochs: number;
   learningRateDecay: number;
+  reasoningBank?: ReasoningBankInstance; // Optional ReasoningBank instance
 }
 
 /**
@@ -61,6 +99,8 @@ export interface PatternAnalysis {
 export class NeuralTrainer {
   private config: NeuralTrainingConfig;
   private trainingHistory: TrainingResult[] = [];
+  private reasoningBank?: ReasoningBankInstance;
+  private sessionId: string;
 
   constructor(config: Partial<NeuralTrainingConfig> = {}) {
     this.config = {
@@ -68,7 +108,10 @@ export class NeuralTrainer {
       minEpochs: config.minEpochs ?? 10,
       maxEpochs: config.maxEpochs ?? 100,
       learningRateDecay: config.learningRateDecay ?? 0.95,
+      reasoningBank: config.reasoningBank,
     };
+    this.reasoningBank = config.reasoningBank;
+    this.sessionId = `neural-trainer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
   /**
@@ -91,13 +134,9 @@ export class NeuralTrainer {
     console.log(`   Pattern Type: ${patternType}`);
     console.log(`   Training Samples: ${watchHistory.length}`);
     console.log(`   Epochs: ${this.config.minEpochs}-${this.config.maxEpochs}`);
-
-    // MCP neural training pattern:
-    // await mcp__claude_flow__neural_train({
-    //   pattern_type: patternType,
-    //   training_data: JSON.stringify(watchHistory),
-    //   epochs: this.config.maxEpochs
-    // });
+    if (this.reasoningBank) {
+      console.log(`   ReasoningBank: ENABLED`);
+    }
 
     // Simulate training metrics
     const epochs = Math.min(
@@ -114,6 +153,31 @@ export class NeuralTrainer {
     };
 
     this.trainingHistory.push(result);
+
+    // Store training episode to ReasoningBank if available
+    if (this.reasoningBank) {
+      try {
+        const patternId = await this.reasoningBank.storePattern({
+          sessionId: this.sessionId,
+          task: `${patternType}_training`,
+          input: JSON.stringify({
+            sampleCount: watchHistory.length,
+            patternType,
+            epochs,
+          }),
+          output: JSON.stringify({
+            accuracy: result.accuracy,
+            loss: result.loss,
+          }),
+          success: result.accuracy >= 0.8,
+          reward: result.accuracy,
+          latencyMs: epochs * 10, // Simulate training time
+        });
+        console.log(`   ReasoningBank: Stored pattern #${patternId}`);
+      } catch (error) {
+        console.warn(`   ReasoningBank: Failed to store pattern:`, error);
+      }
+    }
 
     console.log(`✅ Training Complete`);
     console.log(`   Accuracy: ${(result.accuracy * 100).toFixed(1)}%`);
@@ -197,25 +261,55 @@ export class NeuralTrainer {
     console.log(`   Operation: ${operation}`);
     console.log(`   Outcome: ${outcome}`);
 
-    // MCP pattern analysis:
-    // await mcp__claude_flow__neural_patterns({
-    //   action: 'analyze',
-    //   operation,
-    //   outcome
-    // });
+    let patterns = [
+      { name: 'user_preference', confidence: 0.85, frequency: 120 },
+      { name: 'genre_affinity', confidence: 0.78, frequency: 89 },
+      { name: 'temporal_viewing', confidence: 0.72, frequency: 45 },
+    ];
+
+    let recommendations = [
+      'Increase personalization weight for genre preferences',
+      'Consider time-of-day context for recommendations',
+      'Enable group watch suggestions for frequent co-watchers',
+    ];
+
+    // Retrieve patterns from ReasoningBank if available
+    if (this.reasoningBank) {
+      try {
+        const retrievedPatterns = await this.reasoningBank.retrievePatterns(operation, {
+          k: 5,
+          onlySuccesses: outcome === 'success',
+          onlyFailures: outcome === 'failure',
+        });
+
+        if (retrievedPatterns.length > 0) {
+          console.log(`   ReasoningBank: Retrieved ${retrievedPatterns.length} similar patterns`);
+
+          // Enhance patterns with ReasoningBank data
+          patterns = retrievedPatterns.map((p: any, idx: number) => ({
+            name: p.task || `pattern_${idx}`,
+            confidence: p.reward || 0.5,
+            frequency: p.episodeId || idx,
+          }));
+
+          // Get strategic recommendations
+          const strategy = await this.reasoningBank.learnStrategy(operation);
+          if (strategy.recommendation) {
+            recommendations.unshift(strategy.recommendation);
+          }
+          if (strategy.causality?.recommendation) {
+            recommendations.unshift(`Causal analysis: ${strategy.causality.recommendation}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`   ReasoningBank: Failed to retrieve patterns:`, error);
+      }
+    }
 
     return {
       action: 'analyze',
-      patterns: [
-        { name: 'user_preference', confidence: 0.85, frequency: 120 },
-        { name: 'genre_affinity', confidence: 0.78, frequency: 89 },
-        { name: 'temporal_viewing', confidence: 0.72, frequency: 45 },
-      ],
-      recommendations: [
-        'Increase personalization weight for genre preferences',
-        'Consider time-of-day context for recommendations',
-        'Enable group watch suggestions for frequent co-watchers',
-      ],
+      patterns,
+      recommendations,
     };
   }
 
@@ -231,16 +325,22 @@ export class NeuralTrainer {
     console.log(`   User: ${userId}, Content: ${contentId}`);
     console.log(`   Engagement: ${(engagementScore * 100).toFixed(0)}%`);
 
-    // MCP learning pattern:
-    // await mcp__claude_flow__neural_patterns({
-    //   action: 'learn',
-    //   metadata: {
-    //     userId,
-    //     contentId,
-    //     engagementScore,
-    //     timestamp: new Date().toISOString()
-    //   }
-    // });
+    // Store success episode to ReasoningBank if available
+    if (this.reasoningBank) {
+      try {
+        const patternId = await this.reasoningBank.storePattern({
+          sessionId: this.sessionId,
+          task: 'content_recommendation',
+          input: JSON.stringify({ userId, contentId }),
+          output: JSON.stringify({ engagementScore }),
+          success: engagementScore >= 0.7, // Consider 70%+ engagement as success
+          reward: engagementScore,
+        });
+        console.log(`   ReasoningBank: Stored success pattern #${patternId}`);
+      } catch (error) {
+        console.warn(`   ReasoningBank: Failed to store success:`, error);
+      }
+    }
   }
 
   /**
@@ -289,10 +389,21 @@ export class NeuralTrainer {
     totalTrainingSessions: number;
     lastTraining: Date | null;
     avgAccuracy: number;
+    reasoningBankEnabled: boolean;
+    reasoningBankStats?: any;
   } {
     const avgAccuracy = this.trainingHistory.length > 0
       ? this.trainingHistory.reduce((sum, r) => sum + r.accuracy, 0) / this.trainingHistory.length
       : 0;
+
+    let reasoningBankStats = undefined;
+    if (this.reasoningBank) {
+      try {
+        reasoningBankStats = this.reasoningBank.getStats();
+      } catch (error) {
+        console.warn('Failed to get ReasoningBank stats:', error);
+      }
+    }
 
     return {
       enabled: this.config.enableTraining,
@@ -301,7 +412,43 @@ export class NeuralTrainer {
         ? this.trainingHistory[this.trainingHistory.length - 1]!.trainedAt
         : null,
       avgAccuracy,
+      reasoningBankEnabled: !!this.reasoningBank,
+      reasoningBankStats,
     };
+  }
+
+  /**
+   * Consolidate learned patterns into reusable skills
+   * Uses ReasoningBank's auto-consolidation feature
+   */
+  async consolidatePatterns(
+    minSuccessRate: number = 0.8,
+    minUses: number = 3,
+    lookbackDays: number = 30
+  ): Promise<{ skillsCreated: number } | null> {
+    if (!this.reasoningBank) {
+      console.warn('⚠️ ReasoningBank not available - consolidation skipped');
+      return null;
+    }
+
+    console.log(`🔄 Consolidating Patterns`);
+    console.log(`   Min Success Rate: ${(minSuccessRate * 100).toFixed(0)}%`);
+    console.log(`   Min Uses: ${minUses}`);
+    console.log(`   Lookback Days: ${lookbackDays}`);
+
+    try {
+      const result = await this.reasoningBank.autoConsolidate(
+        minUses,
+        minSuccessRate,
+        lookbackDays
+      );
+      console.log(`✅ Consolidation Complete`);
+      console.log(`   Skills Created: ${result.skillsCreated}`);
+      return result;
+    } catch (error) {
+      console.error(`❌ Consolidation Failed:`, error);
+      return { skillsCreated: 0 };
+    }
   }
 
   /**

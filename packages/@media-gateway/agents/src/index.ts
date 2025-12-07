@@ -68,6 +68,15 @@ export {
   type EmbeddingWeights,
 } from './learning/ContentEmbeddings.js';
 
+// AgentDB Cache Adapter (20-40% speedup on repeated queries)
+export {
+  AgentDBCacheAdapter,
+  createAgentDBCache,
+  createAgentDBCacheStrict,
+  isAgentDBAvailable,
+  type CacheAdapter,
+} from './learning/AgentDBCacheAdapter.js';
+
 // LoRA Personalization
 export {
   LoRAPersonalizationEngine,
@@ -197,6 +206,10 @@ export {
 //
 // For AgentDB MMR diversity (multiple distance metrics):
 //   import { MMRDiversityAdapter, createMMRDiversityAdapter } from '@media-gateway/agents';
+//
+// For AgentDB QueryCache integration (20-40% speedup):
+//   import { createAgentDBCache, isAgentDBAvailable } from '@media-gateway/agents';
+//   const cache = createAgentDBCache<number[]>(1000); // Auto-fallback to LRUCache
 //
 // Note: AgentDB controllers are imported directly from agentdb package.
 // See agentdb docs for: ReflexionMemory, SkillLibrary, CausalMemoryGraph,

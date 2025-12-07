@@ -3172,6 +3172,26 @@ This comprehensive TDD specification ensures the Media Gateway platform is built
 
 ### Changelog
 
+#### v1.2.0 (2025-12-07)
+- **SwarmCoordinator ReasoningBank Integration**: Full integration with agentic-flow's ReasoningBank for episode-based learning
+  - Pattern storage with automatic reward calculation
+  - Pattern retrieval with similarity-based matching
+  - Strategy learning from historical patterns
+  - Auto-consolidation of successful patterns into skills
+- **NeuralTrainer ReasoningBank Integration**: Neural training with persistent episodic memory
+  - Training episodes stored to ReasoningBank
+  - Pattern analysis retrieves similar historical patterns
+  - Success episode tracking for engagement learning
+  - Pattern consolidation via autoConsolidate()
+- **AgentDBCacheAdapter**: New cache adapter for 20-40% speedup on repeated queries
+  - Drop-in replacement for LRUCache
+  - Wraps agentdb's QueryCache with CacheAdapter interface
+  - Automatic fallback to LRUCache if agentdb unavailable
+  - Factory functions: createAgentDBCache(), createAgentDBCacheStrict(), isAgentDBAvailable()
+- **Vitest Configuration Fix**: Resolved path resolution issue for @media-gateway/core
+  - Fixed vite/esbuild double-resolving causing TSConfckParseError
+  - Added regex-based alias for sub-path imports
+
 #### v1.1.0 (2025-12-07)
 - Added Section 12: AgentDB & Agentic-Flow Integration Analysis
 - Documented 4 new adapter implementations
