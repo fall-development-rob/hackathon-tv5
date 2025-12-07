@@ -6,6 +6,16 @@ import { RecommendationsQuerySchema } from '../schemas';
 const router = Router();
 
 /**
+ * Typed query parameters for recommendations endpoint
+ */
+interface RecommendationsQueryParams {
+  userId: string;
+  mood?: string;
+  context?: string;
+  limit?: number;
+}
+
+/**
  * @openapi
  * /v1/recommendations:
  *   get:
@@ -59,7 +69,7 @@ router.get(
   '/',
   validateQuery(RecommendationsQuerySchema),
   asyncHandler(async (req, res) => {
-    const { userId, mood, context, limit } = req.query as any;
+    const { userId, mood, context, limit } = req.query as RecommendationsQueryParams;
 
     // TODO: Integrate with SwarmCoordinator for personalized recommendations
     const recommendations = [

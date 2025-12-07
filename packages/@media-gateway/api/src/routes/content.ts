@@ -7,6 +7,13 @@ import { z } from 'zod';
 const router = Router();
 
 /**
+ * Typed query parameters for content endpoint
+ */
+interface ContentQueryParams {
+  include?: string;
+}
+
+/**
  * @openapi
  * /v1/content/{id}:
  *   get:
@@ -53,11 +60,57 @@ router.get(
   validateQuery(ContentQuerySchema),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { include } = req.query as any;
+    const { include } = req.query as ContentQueryParams;
 
     // TODO: Integrate with SwarmCoordinator for content retrieval
     // Placeholder implementation
-    const content: any = {
+    interface ContentResponse {
+      id: string;
+      title: string;
+      mediaType: string;
+      year: number;
+      genre: string[];
+      rating: number;
+      duration: number;
+      description: string;
+      releaseDate: string;
+      cast: Array<{ name: string; role: string }>;
+      crew: Array<{ name: string; role: string }>;
+      metadata: {
+        language: string;
+        country: string;
+        certification: string;
+      };
+      availability?: Array<{
+        platform: string;
+        region: string;
+        type: string;
+        deepLink: string;
+        price: { amount: number; currency: string } | null;
+      }>;
+      similar?: Array<{
+        id: string;
+        title: string;
+        mediaType: string;
+        rating: number;
+        similarityScore: number;
+      }>;
+      reviews?: {
+        aggregate: {
+          averageRating: number;
+          count: number;
+          distribution: Record<string, number>;
+        };
+        recent: Array<{
+          userId: string;
+          rating: number;
+          review: string;
+          timestamp: string;
+        }>;
+      };
+    }
+
+    const content: ContentResponse = {
       id,
       title: 'Example Content',
       mediaType: 'movie',
@@ -88,7 +141,7 @@ router.get(
     }
 
     // Conditionally include additional data
-    if (include.includes('availability')) {
+    if (include && include.includes('availability')) {
       content.availability = [
         {
           platform: 'Netflix',
@@ -107,7 +160,7 @@ router.get(
       ];
     }
 
-    if (include.includes('similar')) {
+    if (include && include.includes('similar')) {
       content.similar = [
         {
           id: 'similar-1',
@@ -119,7 +172,7 @@ router.get(
       ];
     }
 
-    if (include.includes('reviews')) {
+    if (include && include.includes('reviews')) {
       content.reviews = {
         aggregate: {
           averageRating: 8.5,

@@ -7,6 +7,19 @@ import { SearchQuerySchema } from '../schemas';
 const router = Router();
 
 /**
+ * Typed query parameters for search endpoint
+ */
+interface SearchQueryParams {
+  q: string;
+  mediaType?: string;
+  genre?: string;
+  year?: number;
+  rating?: number;
+  limit?: number;
+  offset?: number;
+}
+
+/**
  * @openapi
  * /v1/search:
  *   get:
@@ -86,7 +99,7 @@ router.get(
   searchRateLimit,
   validateQuery(SearchQuerySchema),
   asyncHandler(async (req, res) => {
-    const { q, mediaType, genre, year, rating, limit, offset } = req.query as any;
+    const { q, mediaType, genre, year, rating, limit, offset } = req.query as SearchQueryParams;
 
     // TODO: Integrate with SwarmCoordinator for intelligent search
     // This is a placeholder implementation

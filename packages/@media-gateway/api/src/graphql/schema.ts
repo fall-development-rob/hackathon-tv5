@@ -6,6 +6,7 @@
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { typeDefs } from './types';
 import { resolvers, createDataLoaders, type GraphQLContext } from './resolvers';
+import type { SwarmCoordinator } from '@media-gateway/agents';
 
 /**
  * Create executable GraphQL schema
@@ -20,7 +21,7 @@ export const schema = makeExecutableSchema({
  */
 export function createGraphQLContext(params: {
   services: GraphQLContext['services'];
-  swarmCoordinator?: any;
+  swarmCoordinator?: SwarmCoordinator;
   userId?: string;
 }): GraphQLContext {
   const { services, swarmCoordinator, userId } = params;

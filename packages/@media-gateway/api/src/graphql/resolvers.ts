@@ -5,6 +5,7 @@
 
 import DataLoader from 'dataloader';
 import type { IResolvers } from '@graphql-tools/utils';
+import type { SwarmCoordinator } from '@media-gateway/agents';
 
 // Types for resolver context and arguments
 export interface GraphQLContext {
@@ -21,7 +22,7 @@ export interface GraphQLContext {
     platformService: any;
     groupSessionService: any;
   };
-  swarmCoordinator?: any;
+  swarmCoordinator?: SwarmCoordinator;
   userId?: string;
 }
 

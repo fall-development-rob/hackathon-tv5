@@ -7,6 +7,13 @@ import { z } from 'zod';
 const router = Router();
 
 /**
+ * Typed query parameters for availability endpoint
+ */
+interface AvailabilityQueryParams {
+  region?: string;
+}
+
+/**
  * @openapi
  * /v1/availability/{contentId}:
  *   get:
@@ -53,7 +60,7 @@ router.get(
   validateQuery(AvailabilityQuerySchema),
   asyncHandler(async (req, res) => {
     const { contentId } = req.params;
-    const { region } = req.query as any;
+    const { region } = req.query as AvailabilityQueryParams;
 
     // TODO: Integrate with SwarmCoordinator for real-time availability checks
     const platforms = [
