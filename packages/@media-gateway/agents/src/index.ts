@@ -3,6 +3,20 @@
  *
  * Multi-agent system for media discovery
  * Uses collaborative AI agents with orchestration
+ *
+ * Architecture:
+ * - Local agents: Domain-specific media discovery agents
+ * - agentdb: Cognitive memory (ReflexionMemory, SkillLibrary, etc.)
+ * - @media-gateway/database: RuVector for embeddings, AgentDB wrapper
+ * - agentic-flow: Swarm coordination, neural training (via MCP)
+ *
+ * Novel implementations in this package:
+ * - IntentParser: Media-specific query understanding
+ * - MultiModelRouter: LLM selection with cost optimization
+ * - ContentEmbeddingGenerator: Lightweight feature embeddings for Q-learning
+ * - HybridRecommendationEngine: RRF fusion algorithm
+ * - DiversityFilter: MMR algorithm
+ * - LoRAPersonalizationEngine: LoRA adapters for personalization
  */
 
 // Agents
@@ -137,30 +151,25 @@ export {
 } from './cognitive/MultiModelRouter.js';
 
 // =============================================================================
-// AgentDB Re-exports
-// For full-featured cognitive memory with database persistence, vector search,
-// and graph relationships, these come from the agentdb package.
+// Package Integration Notes
 // =============================================================================
-
-// Re-export AgentDB controllers for cognitive memory
-export {
-  ReflexionMemory,
-  type Episode as ReflexionEpisode,
-  type EpisodeWithEmbedding,
-  type ReflexionQuery,
-} from 'agentdb/controllers/ReflexionMemory';
-
-export {
-  SkillLibrary,
-  type Skill,
-  type SkillLink,
-  type SkillQuery,
-} from 'agentdb/controllers/SkillLibrary';
-
-// Additional AgentDB features for advanced use cases
-export { EmbeddingService } from 'agentdb/controllers/EmbeddingService';
-export { CausalMemoryGraph } from 'agentdb/controllers/CausalMemoryGraph';
-export { ExplainableRecall } from 'agentdb/controllers/ExplainableRecall';
-export { NightlyLearner } from 'agentdb/controllers/NightlyLearner';
-export { HNSWIndex } from 'agentdb/controllers/HNSWIndex';
-export { AttentionService } from 'agentdb/controllers/AttentionService';
+//
+// For production vector operations:
+//   import { RuVectorWrapper, createRuVector } from '@media-gateway/database';
+//   const ruvector = await createRuVector('./vectors.db');
+//   const embedding = await ruvector.generateEmbedding('action movies');
+//
+// For cognitive memory (episode learning, skill consolidation):
+//   import { ReflexionMemory } from 'agentdb/controllers/ReflexionMemory';
+//   import { SkillLibrary } from 'agentdb/controllers/SkillLibrary';
+//
+// For lightweight feature embeddings (Q-learning, offline):
+//   import { ContentEmbeddingGenerator } from '@media-gateway/agents';
+//
+// For LLM cost optimization:
+//   import { MultiModelRouter, createMultiModelRouter } from '@media-gateway/agents';
+//
+// Note: AgentDB controllers are imported directly from agentdb package.
+// See agentdb docs for: ReflexionMemory, SkillLibrary, CausalMemoryGraph,
+// EmbeddingService, HNSWIndex, AttentionService, NightlyLearner, etc.
+//

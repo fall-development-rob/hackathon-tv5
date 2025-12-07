@@ -1,10 +1,19 @@
 /**
  * Neural Trainer
- * Integrates with Claude Flow MCP neural training capabilities
- * Enables continuous learning from user interactions
+ *
+ * Integrates with agentic-flow for neural training capabilities.
+ * Uses ReflexionMemory from agentdb for episode-based learning.
+ *
+ * Architecture:
+ * - agentic-flow: Neural training, pattern recognition, swarm coordination
+ * - agentdb: ReflexionMemory for episode storage, SkillLibrary for consolidation
+ *
+ * MCP Integration:
+ * When running via Claude Code, actual MCP calls (mcp__claude_flow__*) are made at runtime.
+ * This class provides the integration patterns and data transformation.
  */
 
-import type { WatchEvent, UserPreferences } from '@media-gateway/core';
+import type { WatchEvent } from '@media-gateway/core';
 
 /**
  * Training pattern types for Claude Flow neural training
@@ -289,7 +298,7 @@ export class NeuralTrainer {
       enabled: this.config.enableTraining,
       totalTrainingSessions: this.trainingHistory.length,
       lastTraining: this.trainingHistory.length > 0
-        ? this.trainingHistory[this.trainingHistory.length - 1].trainedAt
+        ? this.trainingHistory[this.trainingHistory.length - 1]!.trainedAt
         : null,
       avgAccuracy,
     };

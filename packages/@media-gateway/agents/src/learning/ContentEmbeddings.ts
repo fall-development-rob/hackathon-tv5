@@ -1,14 +1,27 @@
 /**
- * Content Embedding System with LRU Caching
+ * Content Embedding System
  *
- * Generates 64-dimensional embeddings for media content:
+ * Generates 64-dimensional feature embeddings for media content:
  * - Genre vectors (10 dims): predefined vectors per genre
  * - Content type (8 dims): one-hot encoding
  * - Metadata (8 dims): normalized popularity, rating, recency, duration
  * - Keywords (38 dims): hash-based distribution
  *
  * Weighting: genre(0.30), type(0.15), metadata(0.25), keywords(0.30)
+ *
+ * Note: For semantic embeddings and vector database operations, use:
+ * - @media-gateway/database (RuVectorWrapper) for real AI embeddings
+ * - agentdb for vector search with HNSW indexing
+ *
+ * This module provides lightweight feature embeddings for:
+ * - Q-learning state representation
+ * - Content similarity without API calls
+ * - Offline/local recommendation features
  */
+
+// Note: For production vector operations (Float32Array), use:
+//   import { cosineSimilarity } from '@media-gateway/database';
+// This module provides cosineSimilarity for number[] arrays (feature embeddings).
 
 // ============================================================================
 // Types and Interfaces
@@ -68,7 +81,8 @@ export interface EmbeddingWeights {
 }
 
 // ============================================================================
-// LRU Cache Implementation
+// LRU Cache - Simple implementation for local feature caching
+// For production vector caching, use @media-gateway/database or agentdb
 // ============================================================================
 
 export class LRUCache<T> {
