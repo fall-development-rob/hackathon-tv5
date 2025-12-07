@@ -101,9 +101,16 @@ export class SwarmCoordinator {
         this.initializeSession(sessionId ?? taskId, userId);
       }
 
-      // Parse intent
-      const intent = this.discoveryAgent!.parseIntent(query);
-      agentsUsed.push('DiscoveryAgent');
+      // Try AI-powered intent parsing first, fallback to regex
+      let intent: AgentIntent;
+      try {
+        intent = await this.discoveryAgent!.parseIntentWithAI(query);
+        agentsUsed.push('DiscoveryAgent (AI)');
+      } catch (error) {
+        console.warn('AI intent parsing failed, using regex fallback:', error);
+        intent = this.discoveryAgent!.parseIntent(query);
+        agentsUsed.push('DiscoveryAgent (Regex)');
+      }
 
       // Route based on intent
       let result: any;

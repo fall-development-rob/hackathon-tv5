@@ -1,10 +1,28 @@
 /**
  * Discovery Agent
  * Natural language understanding and intent parsing for media discovery
- * Uses Google Gemini for AI processing
+ * Uses Google Gemini 2.0 Flash for AI-powered intent parsing
  */
 
 import type { AgentIntent, AgentContext, SearchFilters, ConversationTurn } from '@media-gateway/core';
+
+/**
+ * Gemini API response structure for intent parsing
+ */
+interface GeminiIntentResponse {
+  type: 'search' | 'recommendation' | 'group_watch' | 'availability_check' | 'unknown';
+  query?: string;
+  filters?: {
+    genres?: number[];
+    yearMin?: number;
+    yearMax?: number;
+    ratingMin?: number;
+    mediaType?: 'movie' | 'tv' | 'all';
+  };
+  contentId?: number;
+  mediaType?: 'movie' | 'tv';
+  groupId?: string;
+}
 
 // Intent patterns for classification
 const INTENT_PATTERNS = {
@@ -87,6 +105,7 @@ const GENRE_IDS: Record<string, number> = {
  */
 export class DiscoveryAgent {
   private context: AgentContext;
+  private geminiApiKey: string | null;
 
   constructor(sessionId: string, userId?: string) {
     this.context = {
@@ -95,10 +114,126 @@ export class DiscoveryAgent {
       conversationHistory: [],
       accumulatedFilters: {},
     };
+    this.geminiApiKey = process.env.GOOGLE_GEMINI_API_KEY ?? null;
   }
 
   /**
-   * Parse user intent from natural language query
+   * Parse user intent from natural language query using AI (Gemini)
+   * Falls back to regex-based parsing if Gemini is unavailable
+   */
+  async parseIntentWithAI(query: string): Promise<AgentIntent> {
+    // If no API key, fall back to regex-based parsing
+    if (!this.geminiApiKey) {
+      console.warn('Google Gemini API key not found, using regex-based intent parsing');
+      return this.parseIntent(query);
+    }
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${this.geminiApiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `You are an intent parser for a media discovery app. Parse the user query and return JSON.
+
+User query: "${query}"
+
+Return ONLY valid JSON in this format:
+{
+  "type": "search" | "recommendation" | "group_watch" | "availability_check",
+  "query": "cleaned search query if type is search",
+  "filters": {
+    "genres": [genre_ids],
+    "yearMin": number,
+    "yearMax": number,
+    "ratingMin": number,
+    "mediaType": "movie" | "tv" | "all"
+  }
+}
+
+Genre IDs: 28=Action, 12=Adventure, 16=Animation, 35=Comedy, 80=Crime, 99=Documentary, 18=Drama, 10751=Family, 14=Fantasy, 36=History, 27=Horror, 10402=Music, 9648=Mystery, 10749=Romance, 878=SciFi, 53=Thriller, 10752=War, 37=Western
+
+Examples:
+- "action movies from the 90s" -> {"type":"search","query":"action movies","filters":{"genres":[28],"yearMin":1990,"yearMax":1999}}
+- "recommend something for me" -> {"type":"recommendation"}
+- "where can I watch Inception" -> {"type":"availability_check","query":"Inception"}
+- "what should I watch with my friends" -> {"type":"group_watch"}
+
+Parse the query and return ONLY the JSON object, no additional text.`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 500
+            }
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+      // Extract JSON from response (handle cases where LLM adds extra text)
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed: GeminiIntentResponse = JSON.parse(jsonMatch[0]);
+        return this.convertGeminiResponse(parsed, query);
+      } else {
+        throw new Error('No JSON found in Gemini response');
+      }
+    } catch (error) {
+      console.warn('Gemini parsing failed, falling back to regex:', error);
+    }
+
+    // Fallback to regex-based parsing
+    return this.parseIntent(query);
+  }
+
+  /**
+   * Convert Gemini response to AgentIntent format
+   */
+  private convertGeminiResponse(response: GeminiIntentResponse, originalQuery: string): AgentIntent {
+    switch (response.type) {
+      case 'search':
+        return {
+          type: 'search',
+          query: response.query ?? originalQuery,
+          filters: response.filters ?? {}
+        };
+      case 'recommendation':
+        return {
+          type: 'recommendation',
+          context: response.filters ?? this.extractContext(originalQuery)
+        };
+      case 'group_watch':
+        return {
+          type: 'group_watch',
+          groupId: response.groupId ?? 'default'
+        };
+      case 'availability_check':
+        return {
+          type: 'availability_check',
+          contentId: response.contentId ?? 0,
+          mediaType: response.mediaType ?? 'movie'
+        };
+      default:
+        return {
+          type: 'search',
+          query: originalQuery,
+          filters: {}
+        };
+    }
+  }
+
+  /**
+   * Parse user intent from natural language query (regex-based fallback)
    */
   parseIntent(query: string): AgentIntent {
     const normalizedQuery = query.toLowerCase().trim();
@@ -244,7 +379,35 @@ export class DiscoveryAgent {
     };
 
     if (role === 'user') {
+      // Use regex-based parsing for synchronous turn addition
+      // For AI-powered parsing, use parseIntentWithAI() separately
       turn.intent = this.parseIntent(content);
+
+      // Accumulate filters from search intents
+      if (turn.intent.type === 'search' && turn.intent.filters) {
+        this.context.accumulatedFilters = {
+          ...this.context.accumulatedFilters,
+          ...turn.intent.filters,
+        };
+      }
+    }
+
+    this.context.conversationHistory.push(turn);
+  }
+
+  /**
+   * Add conversation turn with AI-powered intent parsing
+   */
+  async addTurnWithAI(role: 'user' | 'assistant', content: string): Promise<void> {
+    const turn: ConversationTurn = {
+      role,
+      content,
+      timestamp: new Date(),
+    };
+
+    if (role === 'user') {
+      // Use AI-powered intent parsing
+      turn.intent = await this.parseIntentWithAI(content);
 
       // Accumulate filters from search intents
       if (turn.intent.type === 'search' && turn.intent.filters) {
