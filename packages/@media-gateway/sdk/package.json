@@ -1,0 +1,45 @@
+{
+  "name": "@media-gateway/sdk",
+  "version": "0.1.0",
+  "description": "SDK for third-party integration with Media Gateway APIs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js"
+    }
+  },
+  "dependencies": {
+    "@media-gateway/core": "workspace:*",
+    "@media-gateway/arw": "workspace:*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "media-gateway-sdk",
+    "api-client",
+    "third-party-integration"
+  ],
+  "license": "Apache-2.0"
+}
