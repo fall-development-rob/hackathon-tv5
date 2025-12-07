@@ -19,7 +19,6 @@ import { z } from 'zod';
  * Media content types supported by the platform
  */
 export const MediaTypeSchema = z.enum(['movie', 'tv', 'documentary', 'anime', 'short']);
-export type MediaType = z.infer<typeof MediaTypeSchema>;
 
 /**
  * Content rating systems
@@ -72,7 +71,6 @@ export const GenreSchema = z.enum([
   'war',
   'western'
 ]);
-export type Genre = z.infer<typeof GenreSchema>;
 
 /**
  * Mood/tone categories for content
@@ -162,7 +160,6 @@ export const MediaContentSchema = z.object({
   { message: 'TV shows must specify seasons and episodes' }
 );
 
-export type MediaContent = z.infer<typeof MediaContentSchema>;
 
 // ============================================================================
 // Search & Filter Schemas
@@ -252,7 +249,6 @@ export const SearchFiltersSchema = z.object({
   { message: 'minRuntime must be less than or equal to maxRuntime' }
 );
 
-export type SearchFilters = z.infer<typeof SearchFiltersSchema>;
 
 // ============================================================================
 // Agent Intent Schema (Discriminated Union)
@@ -321,7 +317,6 @@ export const AgentIntentSchema = z.discriminatedUnion('type', [
   PreferenceUpdateIntentSchema
 ]);
 
-export type AgentIntent = z.infer<typeof AgentIntentSchema>;
 export type SearchIntent = z.infer<typeof SearchIntentSchema>;
 export type RecommendationIntent = z.infer<typeof RecommendationIntentSchema>;
 export type GroupSessionIntent = z.infer<typeof GroupSessionIntentSchema>;
@@ -346,9 +341,9 @@ export const PreferenceVectorSchema = z.object({
         for (const [key, val] of Object.entries(obj)) {
           normalized[key] = val / sum;
         }
-        return normalized as Record<Genre, number>;
+        return normalized as Record<string, number>;
       }
-      return obj as Record<Genre, number>;
+      return obj as Record<string, number>;
     }),
 
   moods: z.record(MoodSchema, z.number().min(0).max(1))
@@ -406,7 +401,6 @@ export const UserPreferencesSchema = z.object({
   { message: 'preferredRuntimeMin must be less than or equal to preferredRuntimeMax' }
 );
 
-export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 export type PreferenceVector = z.infer<typeof PreferenceVectorSchema>;
 
 // ============================================================================
@@ -495,8 +489,6 @@ export const GroupSessionSchema = z.object({
   { message: 'Host must be a participant in the session' }
 );
 
-export type GroupSession = z.infer<typeof GroupSessionSchema>;
-export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
 // ============================================================================
 // Platform Availability Schema
@@ -566,7 +558,6 @@ export const PlatformAvailabilitySchema = z.object({
   { message: 'Unavailable content cannot have pricing or quality information' }
 );
 
-export type PlatformAvailability = z.infer<typeof PlatformAvailabilitySchema>;
 
 // ============================================================================
 // API Response Schemas (Result Pattern)

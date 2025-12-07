@@ -44,27 +44,39 @@ export function calculateGroupCentroid(
     totalWeight += weight;
 
     for (let i = 0; i < dimensions; i++) {
-      centroid[i] += member.preferences.vector![i]! * weight;
+      const vectorValue = member.preferences.vector![i];
+      if (vectorValue !== undefined && centroid[i] !== undefined) {
+        centroid[i]! += vectorValue * weight;
+      }
     }
   }
 
   // Normalize
   if (totalWeight > 0) {
     for (let i = 0; i < dimensions; i++) {
-      centroid[i] /= totalWeight;
+      const value = centroid[i];
+      if (value !== undefined) {
+        centroid[i] = value / totalWeight;
+      }
     }
   }
 
   // Unit normalize the result
   let magnitude = 0;
   for (let i = 0; i < dimensions; i++) {
-    magnitude += centroid[i]! * centroid[i]!;
+    const value = centroid[i];
+    if (value !== undefined) {
+      magnitude += value * value;
+    }
   }
   magnitude = Math.sqrt(magnitude);
 
   if (magnitude > 0) {
     for (let i = 0; i < dimensions; i++) {
-      centroid[i] /= magnitude;
+      const value = centroid[i];
+      if (value !== undefined) {
+        centroid[i] = value / magnitude;
+      }
     }
   }
 
