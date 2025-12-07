@@ -112,3 +112,55 @@ export {
   type ViewingContext,
   type ContentCandidate,
 } from './recommendations/ContextAwareFilter.js';
+
+// Intent Parser (Novel implementation for media discovery)
+export {
+  createIntentParser,
+  type IntentParser,
+  type IntentType,
+  type EntityType,
+  type Entity,
+  type IntentMetadata,
+  type ParsedIntent,
+  type Token,
+} from './cognitive/IntentParser.js';
+
+// Multi-Model Router (Novel implementation for cost optimization)
+export {
+  MultiModelRouter,
+  createMultiModelRouter,
+  type ModelProfile,
+  type RoutingDecision,
+  type TaskRequirements,
+  type UsageStats,
+  type PriorityMode,
+} from './cognitive/MultiModelRouter.js';
+
+// =============================================================================
+// AgentDB Re-exports
+// For full-featured cognitive memory with database persistence, vector search,
+// and graph relationships, these come from the agentdb package.
+// =============================================================================
+
+// Re-export AgentDB controllers for cognitive memory
+export {
+  ReflexionMemory,
+  type Episode as ReflexionEpisode,
+  type EpisodeWithEmbedding,
+  type ReflexionQuery,
+} from 'agentdb/controllers/ReflexionMemory';
+
+export {
+  SkillLibrary,
+  type Skill,
+  type SkillLink,
+  type SkillQuery,
+} from 'agentdb/controllers/SkillLibrary';
+
+// Additional AgentDB features for advanced use cases
+export { EmbeddingService } from 'agentdb/controllers/EmbeddingService';
+export { CausalMemoryGraph } from 'agentdb/controllers/CausalMemoryGraph';
+export { ExplainableRecall } from 'agentdb/controllers/ExplainableRecall';
+export { NightlyLearner } from 'agentdb/controllers/NightlyLearner';
+export { HNSWIndex } from 'agentdb/controllers/HNSWIndex';
+export { AttentionService } from 'agentdb/controllers/AttentionService';

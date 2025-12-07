@@ -40,6 +40,7 @@
     "@media-gateway/database": "workspace:*",
     "@ai-sdk/google": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
+    "agentdb": "^2.0.0-alpha.2.20",
     "ai": "^4.0.0",
     "zod": "^3.23.0"
   },
