@@ -8,6 +8,9 @@
 // Types
 export * from './types/index.js';
 
+// Schemas (Zod validation)
+export * from './schemas/index.js';
+
 // Services
 export * from './services/UserPreferenceService.js';
 export * from './services/SemanticSearchService.js';
