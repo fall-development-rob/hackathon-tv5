@@ -1,0 +1,3 @@
+packages:
+  - 'packages/@media-gateway/*'
+  - 'apps/*'

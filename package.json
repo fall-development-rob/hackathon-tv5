@@ -1,0 +1,47 @@
+{
+  "name": "media-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-powered media discovery platform solving the 45-minute decision problem",
+  "type": "module",
+  "workspaces": [
+    "packages/@media-gateway/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean && rm -rf node_modules",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "prepare": "husky install || true"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "husky": "^9.0.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "keywords": [
+    "media-gateway",
+    "streaming",
+    "ai-discovery",
+    "multi-agent",
+    "recommendation-engine",
+    "vector-database"
+  ],
+  "author": "Media Gateway Team",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/media-gateway/hackathon-tv5"
+  }
+}
