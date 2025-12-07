@@ -68,6 +68,7 @@ export class RuVectorWrapper {
 
   /**
    * Generate embedding for text using OpenAI API
+   * Tries Vertex AI first if credentials are available
    */
   async generateEmbedding(text: string): Promise<Float32Array | null> {
     // Check cache first
@@ -77,6 +78,16 @@ export class RuVectorWrapper {
       return cached.embedding;
     }
 
+    // Try Vertex AI first if credentials are available
+    const hasVertexAI = process.env['GOOGLE_VERTEX_PROJECT_ID'] && process.env['GOOGLE_ACCESS_TOKEN'];
+    if (hasVertexAI) {
+      const vertexEmbedding = await this.generateEmbeddingWithVertexAI(text);
+      if (vertexEmbedding) {
+        return vertexEmbedding;
+      }
+    }
+
+    // Fall back to OpenAI
     const apiKey = process.env['OPENAI_API_KEY'];
     if (!apiKey) {
       console.warn('OpenAI API key not set, using mock embedding');
@@ -112,6 +123,55 @@ export class RuVectorWrapper {
     } catch (error) {
       console.error('Failed to generate embedding:', error);
       return null;
+    }
+  }
+
+  /**
+   * Generate embedding using Google Vertex AI
+   * Uses text-embedding-004 for 768-dim embeddings
+   */
+  async generateEmbeddingWithVertexAI(text: string): Promise<Float32Array | null> {
+    const projectId = process.env['GOOGLE_VERTEX_PROJECT_ID'];
+    const accessToken = process.env['GOOGLE_ACCESS_TOKEN'];
+
+    if (!projectId || !accessToken) {
+      console.warn('Google Vertex AI credentials not set, falling back to default embedding');
+      return this.generateEmbedding(text);
+    }
+
+    try {
+      const response = await fetch(
+        `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/text-embedding-004:predict`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            instances: [{ content: text }],
+            parameters: { outputDimensionality: EMBEDDING_DIMENSIONS }
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Vertex AI error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const values = data.predictions?.[0]?.embeddings?.values;
+
+      if (values && values.length === EMBEDDING_DIMENSIONS) {
+        const embedding = new Float32Array(values);
+        this.embeddingCache.set(text.toLowerCase().trim(), { embedding, timestamp: Date.now() });
+        return embedding;
+      }
+
+      throw new Error('Invalid embedding response from Vertex AI');
+    } catch (error) {
+      console.warn('Vertex AI embedding failed, falling back:', error);
+      return this.generateEmbedding(text);
     }
   }
 
