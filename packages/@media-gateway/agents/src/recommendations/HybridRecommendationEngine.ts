@@ -344,7 +344,9 @@ export class ContentBasedStrategy implements RecommendationStrategy {
     this.weight = weight;
     this.contentEmbeddings = new Map();
     this.userPreferences = new Map();
-    this.hnswAdapter = hnswAdapter;
+    if (hnswAdapter) {
+      this.hnswAdapter = hnswAdapter;
+    }
   }
 
   async getRankings(userId: string, limit: number): Promise<RankedItem[]> {
@@ -688,9 +690,15 @@ export class HybridRecommendationEngine {
     }
 
     // Optional AgentDB integrations
-    this.queryCache = options?.queryCache;
-    this.mmrAdapter = options?.mmrAdapter;
-    this.reasoningBank = options?.reasoningBank;
+    if (options?.queryCache) {
+      this.queryCache = options.queryCache;
+    }
+    if (options?.mmrAdapter) {
+      this.mmrAdapter = options.mmrAdapter;
+    }
+    if (options?.reasoningBank) {
+      this.reasoningBank = options.reasoningBank;
+    }
 
     if (this.queryCache) {
       console.log('[HybridRecommendationEngine] QueryCache enabled for 20-40% speedup');
@@ -915,7 +923,6 @@ export class HybridRecommendationEngine {
         mediaType: result.mediaType,
         relevanceScore: result.rrfScore,
         genres: [],
-        releaseDate: undefined,
       }));
 
       // Apply MMR
@@ -1233,11 +1240,23 @@ export function createHybridRecommendationEngine(
     new ContextAwareStrategy(options.contextWeight ?? 0.20),
   ];
 
-  return new HybridRecommendationEngine(strategies, {
-    queryCache: options.queryCache,
-    mmrAdapter: options.mmrAdapter,
-    reasoningBank: options.reasoningBank,
-  });
+  const engineOptions: {
+    queryCache?: QueryCache;
+    mmrAdapter?: MMRDiversityAdapter;
+    reasoningBank?: ReasoningBank;
+  } = {};
+
+  if (options.queryCache) {
+    engineOptions.queryCache = options.queryCache;
+  }
+  if (options.mmrAdapter) {
+    engineOptions.mmrAdapter = options.mmrAdapter;
+  }
+  if (options.reasoningBank) {
+    engineOptions.reasoningBank = options.reasoningBank;
+  }
+
+  return new HybridRecommendationEngine(strategies, engineOptions);
 }
 
 // ============================================================================

@@ -130,7 +130,7 @@ export interface LoRAConfig {
   /** Gradient clipping threshold (default: 1.0) */
   gradientClipThreshold?: number;
   /** Optional ReasoningBank instance for adaptive learning */
-  reasoningBank?: ReasoningBankInstance;
+  reasoningBank?: ReasoningBankInstance | undefined;
   /** Enable ReasoningBank query caching (default: true) */
   enableReasoningBankCache?: boolean;
 }
@@ -301,7 +301,7 @@ export class LoRAPersonalizationEngine {
   private readonly useEWC: boolean;
   private readonly ewcLambda: number;
   private readonly gradientClipThreshold: number;
-  private reasoningBank?: ReasoningBankInstance;
+  private reasoningBank?: ReasoningBankInstance | undefined;
   private readonly enableReasoningBankCache: boolean;
   private readonly sessionId: string;
 

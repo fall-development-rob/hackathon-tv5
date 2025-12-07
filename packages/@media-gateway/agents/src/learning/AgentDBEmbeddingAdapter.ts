@@ -134,7 +134,10 @@ export class AgentDBEmbeddingAdapter {
           dimension: 384,
           provider: 'transformers',
         });
-        await this.embeddingService.initialize();
+        // Add null check before calling initialize
+        if (this.embeddingService) {
+          await this.embeddingService.initialize();
+        }
       }
 
       if (agentdbModule.WASMVectorSearch) {
@@ -155,7 +158,7 @@ export class AgentDBEmbeddingAdapter {
     } catch (error) {
       // Graceful fallback - this is expected if agentdb is not available
       this.useAgentDB = false;
-      if (process.env.NODE_ENV === 'development') {
+      if (process.env['NODE_ENV'] === 'development') {
         console.debug('[AgentDBEmbeddingAdapter] AgentDB not available, using built-in ContentEmbeddingGenerator');
       }
     }
@@ -240,11 +243,11 @@ export class AgentDBEmbeddingAdapter {
         // Map results with IDs
         const results = candidates.map((candidate, i) => ({
           id: candidate.id,
-          similarity: similarities[i],
+          similarity: similarities[i] ?? 0,
         }));
 
         // Sort and take top-K
-        results.sort((a, b) => b.similarity - a.similarity);
+        results.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
         return results.slice(0, k);
       } catch (error) {
         // Fall through to fallback
@@ -358,13 +361,19 @@ export class AgentDBEmbeddingAdapter {
     // Normalize
     let norm = 0;
     for (let i = 0; i < embedding.length; i++) {
-      norm += embedding[i] * embedding[i];
+      const val = embedding[i];
+      if (val !== undefined) {
+        norm += val * val;
+      }
     }
     norm = Math.sqrt(norm);
 
     if (norm > 0) {
       for (let i = 0; i < embedding.length; i++) {
-        embedding[i] /= norm;
+        const val = embedding[i];
+        if (val !== undefined) {
+          embedding[i] = val / norm;
+        }
       }
     }
 
