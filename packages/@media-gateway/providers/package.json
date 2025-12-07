@@ -1,0 +1,51 @@
+{
+  "name": "@media-gateway/providers",
+  "version": "0.1.0",
+  "description": "Streaming provider adapters for cross-platform content matching and availability",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tmdb": {
+      "types": "./dist/adapters/TMDBAdapter.d.ts",
+      "import": "./dist/adapters/TMDBAdapter.js"
+    },
+    "./availability": {
+      "types": "./dist/availability/index.d.ts",
+      "import": "./dist/availability/index.js"
+    }
+  },
+  "dependencies": {
+    "@media-gateway/core": "workspace:*",
+    "tmdb-ts": "^2.0.3",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "streaming-providers",
+    "tmdb",
+    "netflix",
+    "content-matching",
+    "deep-links"
+  ],
+  "license": "Apache-2.0"
+}
