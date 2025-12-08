@@ -12,7 +12,8 @@ services:
   # and embeddings storage. Optimized for AI agent state management and
   # semantic search capabilities.
   ruvector-postgres:
-    image: ruvector/postgres:latest
+    # RuVector PostgreSQL with pgvector extension for vector similarity search
+    image: ruvnet/ruvector-postgres
     container_name: media-gateway-postgres
     restart: unless-stopped
 
