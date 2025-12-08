@@ -1,7 +1,7 @@
 {
   "name": "@media-gateway/ui",
   "version": "0.1.0",
-  "description": "Shared UI components for Media Gateway applications",
+  "description": "Shadcn-style UI components for Media Gateway applications",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -21,21 +21,40 @@
     "./components": {
       "types": "./dist/components/index.d.ts",
       "import": "./dist/components/index.js"
+    },
+    "./lib/utils": {
+      "types": "./dist/lib/utils.d.ts",
+      "import": "./dist/lib/utils.js"
+    },
+    "./hooks": {
+      "types": "./dist/hooks/index.d.ts",
+      "import": "./dist/hooks/index.js"
     }
   },
   "dependencies": {
     "@media-gateway/core": "workspace:*",
+    "@radix-ui/react-slot": "^1.1.0",
+    "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
+    "lucide-react": "^0.460.0",
     "tailwind-merge": "^2.5.0"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.0.0",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "eslint": "^9.0.0",
+    "happy-dom": "^15.7.0",
+    "tailwindcss": "^3.4.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },
@@ -45,6 +64,8 @@
   "keywords": [
     "ui-components",
     "react",
+    "shadcn",
+    "tailwind",
     "media-gateway"
   ],
   "license": "Apache-2.0"
