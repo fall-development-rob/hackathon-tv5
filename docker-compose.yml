@@ -1,0 +1,292 @@
+version: '3.9'
+
+# Docker Compose Architecture for Media Gateway with RuVector PostgreSQL
+# This configuration integrates ruvector/postgres:latest for vector database capabilities
+# supporting semantic search, embeddings, and multi-agent AI workflows.
+
+services:
+  # =============================================================================
+  # RuVector PostgreSQL Service
+  # =============================================================================
+  # PostgreSQL database with pgvector extension for vector similarity search
+  # and embeddings storage. Optimized for AI agent state management and
+  # semantic search capabilities.
+  ruvector-postgres:
+    image: ruvector/postgres:latest
+    container_name: media-gateway-postgres
+    restart: unless-stopped
+
+    # Environment Configuration
+    environment:
+      # PostgreSQL Core Configuration
+      POSTGRES_USER: ${POSTGRES_USER:-mediagateway}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+      POSTGRES_DB: ${POSTGRES_DB:-media_gateway}
+
+      # Vector Database Configuration
+      # Dimension size for embeddings (768 for most common models)
+      # - OpenAI text-embedding-ada-002: 1536
+      # - Google Vertex AI: 768
+      # - Sentence Transformers: 384-768
+      VECTOR_DIMENSION: ${VECTOR_DIMENSION:-768}
+
+      # PostgreSQL Performance Tuning
+      # Optimized for vector operations and AI workloads
+      POSTGRES_MAX_CONNECTIONS: ${POSTGRES_MAX_CONNECTIONS:-200}
+      POSTGRES_SHARED_BUFFERS: ${POSTGRES_SHARED_BUFFERS:-256MB}
+      POSTGRES_EFFECTIVE_CACHE_SIZE: ${POSTGRES_EFFECTIVE_CACHE_SIZE:-1GB}
+      POSTGRES_WORK_MEM: ${POSTGRES_WORK_MEM:-16MB}
+      POSTGRES_MAINTENANCE_WORK_MEM: ${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+
+      # Vector-specific optimizations
+      # HNSW index parameters for optimal search performance
+      PGVECTOR_HNSW_M: ${PGVECTOR_HNSW_M:-16}
+      PGVECTOR_HNSW_EF_CONSTRUCTION: ${PGVECTOR_HNSW_EF_CONSTRUCTION:-64}
+
+      # Logging and Monitoring
+      POSTGRES_LOG_STATEMENT: ${POSTGRES_LOG_STATEMENT:-all}
+      POSTGRES_LOG_DURATION: ${POSTGRES_LOG_DURATION:-on}
+
+    # Port Mapping
+    # Expose PostgreSQL on standard port 5432
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+    # Volume Configuration
+    # Persistent storage for database data and configuration
+    volumes:
+      # Main database data volume
+      - postgres_data:/var/lib/postgresql/data
+
+      # Vector data volume for optimized vector storage
+      # RuVector may use separate storage for vector indices
+      - vector_data:/var/lib/postgresql/vectors
+
+      # Custom initialization scripts
+      # Place SQL files here to run on first startup
+      - ./config/postgres/init:/docker-entrypoint-initdb.d:ro
+
+      # PostgreSQL configuration overrides
+      - ./config/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+
+      # Backup directory for pg_dump exports
+      - ./backups/postgres:/backups
+
+    # Health Check Configuration
+    # Ensures database is ready before dependent services start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mediagateway} -d ${POSTGRES_DB:-media_gateway}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    # Resource Limits
+    # Adjust based on your infrastructure
+    deploy:
+      resources:
+        limits:
+          cpus: '${POSTGRES_CPU_LIMIT:-2.0}'
+          memory: ${POSTGRES_MEMORY_LIMIT:-2G}
+        reservations:
+          cpus: '${POSTGRES_CPU_RESERVATION:-0.5}'
+          memory: ${POSTGRES_MEMORY_RESERVATION:-512M}
+
+    # Network Configuration
+    networks:
+      - media-gateway-network
+
+    # Logging Configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # pgAdmin Service (Optional - Database Management UI)
+  # =============================================================================
+  # Web-based PostgreSQL administration tool for database management,
+  # query execution, and monitoring
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: media-gateway-pgadmin
+    restart: unless-stopped
+    profiles:
+      - admin
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mediagateway.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json:ro
+
+    networks:
+      - media-gateway-network
+
+    depends_on:
+      ruvector-postgres:
+        condition: service_healthy
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # =============================================================================
+  # Redis Service (Optional - Caching Layer)
+  # =============================================================================
+  # Redis for caching API responses, session management, and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: media-gateway-redis
+    restart: unless-stopped
+    profiles:
+      - cache
+
+    command: >
+      redis-server
+      --maxmemory ${REDIS_MAX_MEMORY:-256mb}
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-}
+
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+    volumes:
+      - redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+    networks:
+      - media-gateway-network
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # =============================================================================
+  # Media Discovery API Service (Example Application Service)
+  # =============================================================================
+  # Node.js API service connecting to RuVector PostgreSQL
+  # Uncomment and configure when ready to deploy the application
+  # media-api:
+  #   build:
+  #     context: .
+  #     dockerfile: apps/media-discovery/Dockerfile
+  #   container_name: media-gateway-api
+  #   restart: unless-stopped
+  #
+  #   environment:
+  #     NODE_ENV: ${NODE_ENV:-development}
+  #     PORT: ${API_PORT:-3000}
+  #
+  #     # Database Connection
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-mediagateway}:${POSTGRES_PASSWORD:-changeme123}@ruvector-postgres:5432/${POSTGRES_DB:-media_gateway}
+  #
+  #     # API Keys
+  #     TMDB_API_KEY: ${TMDB_API_KEY}
+  #     GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY}
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY}
+  #
+  #     # Vector Configuration
+  #     VECTOR_DIMENSION: ${VECTOR_DIMENSION:-768}
+  #
+  #     # Redis Connection (if enabled)
+  #     REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+  #
+  #   ports:
+  #     - "${API_PORT:-3000}:3000"
+  #
+  #   volumes:
+  #     - ./apps/media-discovery:/app
+  #     - /app/node_modules
+  #
+  #   depends_on:
+  #     ruvector-postgres:
+  #       condition: service_healthy
+  #
+  #   networks:
+  #     - media-gateway-network
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+# Internal network for service-to-service communication
+# Provides isolation and security for the media gateway stack
+networks:
+  media-gateway-network:
+    name: media-gateway-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${NETWORK_SUBNET:-172.28.0.0/16}
+
+# =============================================================================
+# Volume Configuration
+# =============================================================================
+# Named volumes for persistent data storage
+# Data persists across container restarts and recreations
+volumes:
+  # PostgreSQL main data volume
+  postgres_data:
+    name: media-gateway-postgres-data
+    driver: local
+
+  # Vector data volume for optimized vector storage
+  vector_data:
+    name: media-gateway-vector-data
+    driver: local
+
+  # pgAdmin configuration and settings
+  pgadmin_data:
+    name: media-gateway-pgadmin-data
+    driver: local
+
+  # Redis data volume
+  redis_data:
+    name: media-gateway-redis-data
+    driver: local
+
+# =============================================================================
+# Usage Instructions
+# =============================================================================
+#
+# Basic Usage:
+#   docker-compose up -d                    # Start core services (PostgreSQL)
+#   docker-compose --profile admin up -d    # Start with pgAdmin
+#   docker-compose --profile cache up -d    # Start with Redis
+#   docker-compose down                     # Stop all services
+#   docker-compose down -v                  # Stop and remove volumes
+#
+# Database Management:
+#   docker-compose exec ruvector-postgres psql -U mediagateway -d media_gateway
+#   docker-compose exec ruvector-postgres pg_dump -U mediagateway media_gateway > backup.sql
+#
+# Logs:
+#   docker-compose logs -f ruvector-postgres
+#   docker-compose logs --tail=100 ruvector-postgres
+#
+# Health Check:
+#   docker-compose ps
+#   docker-compose exec ruvector-postgres pg_isready
+#
+# Connect from Host:
+#   psql -h localhost -p 5432 -U mediagateway -d media_gateway
+#
+# =============================================================================

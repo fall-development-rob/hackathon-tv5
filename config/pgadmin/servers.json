@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Media Gateway - RuVector PostgreSQL",
+      "Group": "Development",
+      "Host": "ruvector-postgres",
+      "Port": 5432,
+      "MaintenanceDB": "media_gateway",
+      "Username": "mediagateway",
+      "SSLMode": "prefer",
+      "Comment": "RuVector PostgreSQL database for Media Gateway project"
+    }
+  }
+}

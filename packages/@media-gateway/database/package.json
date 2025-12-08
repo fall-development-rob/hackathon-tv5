@@ -25,15 +25,21 @@
     "./ruvector": {
       "types": "./dist/ruvector/index.d.ts",
       "import": "./dist/ruvector/index.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres/index.d.ts",
+      "import": "./dist/postgres/index.js"
     }
   },
   "dependencies": {
     "@media-gateway/core": "workspace:*",
     "agentdb": "^2.0.0-alpha.2.18",
+    "pg": "^8.13.0",
     "ruvector": "^0.1.31"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
     "@vitest/coverage-v8": "^2.1.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"

@@ -112,8 +112,12 @@ export class RuVectorWrapper {
         throw new Error(`OpenAI API error: ${response.status}`);
       }
 
-      const data = await response.json();
-      const embedding = new Float32Array(data.data[0].embedding);
+      const data = await response.json() as { data: Array<{ embedding: number[] }> };
+      const embeddingData = data.data[0]?.embedding;
+      if (!embeddingData) {
+        throw new Error('Invalid OpenAI response: no embedding data');
+      }
+      const embedding = new Float32Array(embeddingData);
 
       // Cache the result
       this.embeddingCache.set(cacheKey, { embedding, timestamp: Date.now() });
@@ -159,7 +163,7 @@ export class RuVectorWrapper {
         throw new Error(`Vertex AI error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { predictions?: Array<{ embeddings?: { values?: number[] } }> };
       const values = data.predictions?.[0]?.embeddings?.values;
 
       if (values && values.length === EMBEDDING_DIMENSIONS) {
@@ -185,7 +189,7 @@ export class RuVectorWrapper {
     for (let i = 0; i < textLower.length; i++) {
       const charCode = textLower.charCodeAt(i);
       const idx = (charCode + i) % EMBEDDING_DIMENSIONS;
-      embedding[idx] += Math.sin(charCode / 10) * 0.1;
+      embedding[idx] = (embedding[idx] ?? 0) + Math.sin(charCode / 10) * 0.1;
     }
 
     // Normalize

@@ -1,0 +1,94 @@
+# Docker ignore file for Media Gateway project
+# Prevents unnecessary files from being sent to Docker build context
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+docs/
+ai_docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp/
+.pnp.js
+
+# Testing
+coverage/
+.nyc_output/
+*.test.js
+*.spec.js
+test/
+tests/
+**/__tests__/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+# Temp files
+tmp/
+temp/
+.cache/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Backups
+backups/
+*.sql
+*.dump
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Claude and AI tools
+.claude/
+.hive-mind/
+.claude-flow/
+.swarm/
+.agentic-qe/
+memory/
+coordination/
+
+# Monorepo
+.turbo/
+
+# OS
+Thumbs.db
+.DS_Store
