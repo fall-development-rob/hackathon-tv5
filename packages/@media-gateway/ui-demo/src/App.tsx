@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { useSearch, useRecommendations, useTrending } from "./hooks";
+import { useSearch, useRecommendations, useTrending, useAuth } from "./hooks";
 import { Hero } from "./components/Hero";
 import { ContentRow } from "./components/ContentRow";
 import { DetailModal } from "./components/DetailModal";
 import { SearchBar } from "./components/SearchBar";
-import { Bell, User, ChevronDown } from "lucide-react";
+import { AuthModal } from "./components/AuthModal";
+import { UserMenu } from "./components/UserMenu";
+import { Bell } from "lucide-react";
 
 const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500";
 const BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/original";
@@ -12,11 +14,18 @@ const BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/original";
 type MediaFilter = "all" | "movie" | "tv";
 
 function App() {
+  // Auth
+  const { isAuthenticated } = useAuth();
+
   // State
   const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
   const [featuredItem, setFeaturedItem] = useState<any | null>(null);
   const [activeFilter, setActiveFilter] = useState<MediaFilter>("all");
   const [myList, setMyList] = useState<any[]>([]);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">(
+    "signin",
+  );
 
   // Refs
   const myListRef = useRef<HTMLDivElement>(null);
@@ -68,6 +77,12 @@ function App() {
 
   // Add/Remove from My List
   const toggleMyList = (item: any) => {
+    if (!isAuthenticated) {
+      setAuthModalMode("signin");
+      setShowAuthModal(true);
+      return;
+    }
+
     setMyList((prev) => {
       const exists = prev.some((i) => i.id === item.id);
       if (exists) {
@@ -145,12 +160,19 @@ function App() {
               imageBaseUrl={IMAGE_BASE_URL}
             />
             <Bell className="w-5 h-5 cursor-pointer hover:text-gray-300 transition-colors" />
-            <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 rounded bg-blue-600 flex items-center justify-center">
-                <User className="w-5 h-5" />
-              </div>
-              <ChevronDown className="w-4 h-4" />
-            </div>
+            {isAuthenticated ? (
+              <UserMenu />
+            ) : (
+              <button
+                onClick={() => {
+                  setAuthModalMode("signin");
+                  setShowAuthModal(true);
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-semibold transition-colors"
+              >
+                Sign In
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -193,11 +215,11 @@ function App() {
       {/* Content Rows */}
       <main className="relative z-10 -mt-32 pb-20 space-y-8">
         {/* My List Row */}
-        {myList.length > 0 && (
+        {myList.length > 0 && isAuthenticated && (
           <div ref={myListRef}>
             <ContentRow
               title="My List"
-              subtitle={`${myList.length} ${myList.length === 1 ? "item" : "items"}`}
+              subtitle={`${myList.length} ${myList.length === 1 ? "item" : "items"} - Synced across devices`}
               items={myList.map((item) => ({
                 id: item.id,
                 title: item.title,
@@ -209,6 +231,35 @@ function App() {
               onItemClick={setSelectedMedia}
               imageBaseUrl={IMAGE_BASE_URL}
             />
+          </div>
+        )}
+
+        {/* Sign In Prompt for My List (when not authenticated and has local list) */}
+        {myList.length > 0 && !isAuthenticated && (
+          <div ref={myListRef} className="px-8">
+            <div className="bg-gradient-to-r from-red-600/20 to-transparent border border-red-600/30 rounded-lg p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold mb-2">
+                    My List ({myList.length} items)
+                  </h3>
+                  <p className="text-gray-300 mb-4">
+                    Sign in to save your list across devices and get
+                    personalized recommendations
+                  </p>
+                  <button
+                    onClick={() => {
+                      setAuthModalMode("signin");
+                      setShowAuthModal(true);
+                    }}
+                    className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded font-semibold transition-colors"
+                  >
+                    Sign In to Sync
+                  </button>
+                </div>
+                <div className="hidden md:block text-6xl opacity-50">🔒</div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -522,6 +573,13 @@ function App() {
         onClose={() => setSelectedMedia(null)}
         onToggleMyList={() => selectedMedia && toggleMyList(selectedMedia)}
         imageBaseUrl={BACKDROP_BASE_URL}
+      />
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        initialMode={authModalMode}
       />
     </div>
   );

@@ -1,4 +1,37 @@
-const API_BASE = "http://localhost:3001/v1";
+const API_BASE = "http://localhost:3001/api/v1";
+
+// Default headers that will be used for all requests
+const defaultHeaders: Record<string, string> = {
+  "Content-Type": "application/json",
+};
+
+/**
+ * Set the authentication token for API requests
+ * @param token - The JWT token or null to clear
+ */
+export function setAuthToken(token: string | null): void {
+  if (token) {
+    defaultHeaders["Authorization"] = `Bearer ${token}`;
+  } else {
+    delete defaultHeaders["Authorization"];
+  }
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  user: User;
+  token: string;
+}
+
+export interface UserResponse {
+  user: User;
+}
 
 export interface SearchResult {
   id: string;
@@ -89,6 +122,34 @@ export interface SimilarContentResponse {
   sourceId: string;
 }
 
+export interface MyListItem {
+  id: string;
+  title: string;
+  mediaType: "movie" | "tv";
+  posterPath: string | null;
+  addedAt: number;
+}
+
+export interface MyListItemInput {
+  id: string;
+  title: string;
+  mediaType: "movie" | "tv";
+  posterPath: string | null;
+}
+
+export interface MyListResponse {
+  items: MyListItem[];
+  total: number;
+}
+
+export interface MyListItemResponse {
+  item: MyListItem;
+}
+
+export interface MyListCheckResponse {
+  inList: boolean;
+}
+
 export class APIError extends Error {
   constructor(
     message: string,
@@ -102,7 +163,16 @@ export class APIError extends Error {
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   try {
-    const res = await fetch(url, options);
+    // Merge default headers with provided headers
+    const headers = {
+      ...defaultHeaders,
+      ...(options?.headers || {}),
+    };
+
+    const res = await fetch(url, {
+      ...options,
+      headers,
+    });
 
     if (!res.ok) {
       const error = await res.json().catch(() => ({
@@ -125,6 +195,49 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
     }
     throw new APIError("Unknown error occurred");
   }
+}
+
+/**
+ * Register a new user account
+ */
+export async function authRegister(
+  email: string,
+  password: string,
+  name: string,
+): Promise<AuthResponse> {
+  return fetchJSON<AuthResponse>(`${API_BASE}/auth/register`, {
+    method: "POST",
+    body: JSON.stringify({ email, password, name }),
+  });
+}
+
+/**
+ * Login with email and password
+ */
+export async function authLogin(
+  email: string,
+  password: string,
+): Promise<AuthResponse> {
+  return fetchJSON<AuthResponse>(`${API_BASE}/auth/login`, {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+/**
+ * Logout the current user
+ */
+export async function authLogout(): Promise<void> {
+  return fetchJSON<void>(`${API_BASE}/auth/logout`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Get the current authenticated user
+ */
+export async function authMe(): Promise<UserResponse> {
+  return fetchJSON<UserResponse>(`${API_BASE}/auth/me`);
 }
 
 export const api = {
@@ -253,5 +366,67 @@ export const api = {
     return fetchJSON<RecommendationResponse>(
       `${API_BASE}/recommendations?${params}`,
     );
+  },
+
+  /**
+   * My List API Operations
+   */
+  myList: {
+    /**
+     * Fetch user's My List
+     */
+    fetch: async (token: string): Promise<MyListResponse> => {
+      return fetchJSON<MyListResponse>(`${API_BASE}/my-list`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    },
+
+    /**
+     * Add item to My List
+     */
+    add: async (
+      token: string,
+      item: MyListItemInput,
+    ): Promise<MyListItemResponse> => {
+      return fetchJSON<MyListItemResponse>(`${API_BASE}/my-list`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(item),
+      });
+    },
+
+    /**
+     * Remove item from My List
+     */
+    remove: async (token: string, contentId: string): Promise<void> => {
+      return fetchJSON<void>(`${API_BASE}/my-list/${contentId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    },
+
+    /**
+     * Check if item is in My List
+     */
+    check: async (
+      token: string,
+      contentId: string,
+    ): Promise<MyListCheckResponse> => {
+      return fetchJSON<MyListCheckResponse>(
+        `${API_BASE}/my-list/${contentId}/check`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+    },
   },
 };

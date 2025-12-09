@@ -19,3 +19,6 @@ export type {
 
 export { useMyList, storageUtils } from "./useMyList";
 export type { UseMyListResult, MyListItem } from "./useMyList";
+
+export { useAuth } from "./useAuth";
+export type { AuthContextValue, User } from "./useAuth";
