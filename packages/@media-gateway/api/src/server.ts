@@ -37,10 +37,10 @@ if (NODE_ENV === 'development') {
 }
 
 // API Documentation
-app.use('/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+app.use('/v1/docs', swaggerUi.serve as any, swaggerUi.setup(swaggerSpec, {
   customCss: '.swagger-ui .topbar { display: none }',
   customSiteTitle: 'ARW Media Gateway API',
-}));
+}) as any);
 
 // Serve OpenAPI spec as JSON
 app.get('/v1/openapi.json', (req, res) => {

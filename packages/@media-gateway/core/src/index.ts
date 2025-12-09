@@ -18,12 +18,13 @@ export * from './domain/platform/index.js';
 export * from './domain/social/index.js';
 
 // Use Cases (SPARC Section 6 structure)
-export * from './usecases/search/SearchContent.js';
-export * from './usecases/search/NaturalLanguageSearch.js';
-export * from './usecases/recommendations/GetRecommendations.js';
-export * from './usecases/recommendations/PersonalizedFeed.js';
-export * from './usecases/user/UpdatePreferences.js';
-export * from './usecases/social/CreateGroupSession.js';
+// Export classes and result types, but not duplicate repository interfaces
+export { SearchContent, type SearchContentResult } from './usecases/search/SearchContent.js';
+export { NaturalLanguageSearch, type NaturalLanguageSearchOptions, type NaturalLanguageSearchResult } from './usecases/search/NaturalLanguageSearch.js';
+export { GetRecommendations, type GetRecommendationsResult } from './usecases/recommendations/GetRecommendations.js';
+export { PersonalizedFeed, type PersonalizedFeedResult, type FeedSection, type FeedConfiguration } from './usecases/recommendations/PersonalizedFeed.js';
+export { UpdatePreferences, type PreferenceUpdateRequest, type PreferenceUpdateResult } from './usecases/user/UpdatePreferences.js';
+export { CreateGroupSession, type CreateGroupSessionRequest, type CreateGroupSessionResult } from './usecases/social/CreateGroupSession.js';
 
 // Services
 export * from './services/UserPreferenceService.js';

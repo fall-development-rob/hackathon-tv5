@@ -1,10 +1,11 @@
 import { Router } from 'express';
+import type { Router as IRouter } from 'express';
 import { asyncHandler, ApiError } from '../middleware/errorHandler';
 import { validateParams, validateQuery } from '../middleware/validation';
 import { ContentIdSchema, ContentQuerySchema } from '../schemas';
 import { z } from 'zod';
 
-const router = Router();
+const router: IRouter = Router();
 
 /**
  * Typed query parameters for content endpoint

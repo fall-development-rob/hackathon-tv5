@@ -7,7 +7,7 @@ const isTest = process.env.NODE_ENV === "test";
 const passthrough: RequestHandler = (_req, _res, next) => next();
 
 // General API rate limit
-export const apiRateLimit = isTest
+export const apiRateLimit: RequestHandler = isTest
   ? passthrough
   : rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
@@ -24,7 +24,7 @@ export const apiRateLimit = isTest
     });
 
 // Search rate limit (more restrictive)
-export const searchRateLimit = isTest
+export const searchRateLimit: RequestHandler = isTest
   ? passthrough
   : rateLimit({
       windowMs: 1 * 60 * 1000, // 1 minute
@@ -41,7 +41,7 @@ export const searchRateLimit = isTest
     });
 
 // Write operations rate limit
-export const writeRateLimit = isTest
+export const writeRateLimit: RequestHandler = isTest
   ? passthrough
   : rateLimit({
       windowMs: 5 * 60 * 1000, // 5 minutes

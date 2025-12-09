@@ -1,11 +1,12 @@
 import { Router } from 'express';
+import type { Router as IRouter } from 'express';
 import searchRouter from './search';
 import recommendationsRouter from './recommendations';
 import contentRouter from './content';
 import availabilityRouter from './availability';
 import userRouter from './user';
 
-const router = Router();
+const router: IRouter = Router();
 
 // API version 1 routes
 router.use('/search', searchRouter);

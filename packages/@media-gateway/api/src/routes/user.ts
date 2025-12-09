@@ -1,10 +1,11 @@
 import { Router } from 'express';
+import type { Router as IRouter } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validateBody } from '../middleware/validation';
 import { writeRateLimit } from '../middleware/rateLimit';
 import { WatchHistorySchema, RatingSchema } from '../schemas';
 
-const router = Router();
+const router: IRouter = Router();
 
 /**
  * @openapi

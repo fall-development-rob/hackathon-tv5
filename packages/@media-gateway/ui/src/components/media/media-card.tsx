@@ -30,13 +30,11 @@ export interface MediaCardProps
 const mediaTypeColors: Record<MediaType, string> = {
   movie: "bg-blue-500",
   tv: "bg-purple-500",
-  anime: "bg-pink-500",
 };
 
 const mediaTypeLabels: Record<MediaType, string> = {
   movie: "Movie",
   tv: "TV Series",
-  anime: "Anime",
 };
 
 const MediaCard = React.forwardRef<HTMLDivElement, MediaCardProps>(

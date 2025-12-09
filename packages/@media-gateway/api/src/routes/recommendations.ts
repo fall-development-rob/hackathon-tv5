@@ -1,9 +1,10 @@
 import { Router } from 'express';
+import type { Router as IRouter } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validateQuery } from '../middleware/validation';
 import { RecommendationsQuerySchema } from '../schemas';
 
-const router = Router();
+const router: IRouter = Router();
 
 /**
  * Typed query parameters for recommendations endpoint
@@ -69,7 +70,7 @@ router.get(
   '/',
   validateQuery(RecommendationsQuerySchema),
   asyncHandler(async (req, res) => {
-    const { userId, mood, context, limit } = req.query as RecommendationsQueryParams;
+    const { userId, mood, context, limit } = req.query as unknown as RecommendationsQueryParams;
 
     // TODO: Integrate with SwarmCoordinator for personalized recommendations
     const recommendations = [

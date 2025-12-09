@@ -1,10 +1,11 @@
 import { Router } from 'express';
+import type { Router as IRouter } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validateQuery } from '../middleware/validation';
 import { searchRateLimit } from '../middleware/rateLimit';
 import { SearchQuerySchema } from '../schemas';
 
-const router = Router();
+const router: IRouter = Router();
 
 /**
  * Typed query parameters for search endpoint
@@ -99,7 +100,7 @@ router.get(
   searchRateLimit,
   validateQuery(SearchQuerySchema),
   asyncHandler(async (req, res) => {
-    const { q, mediaType, genre, year, rating, limit, offset } = req.query as SearchQueryParams;
+    const { q, mediaType, genre, year, rating, limit, offset } = req.query as unknown as SearchQueryParams;
 
     // TODO: Integrate with SwarmCoordinator for intelligent search
     // This is a placeholder implementation
