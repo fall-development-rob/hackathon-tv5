@@ -11,11 +11,10 @@
  */
 
 import cron from "node-cron";
-import type { Client, TextChannel, User } from "discord.js";
+import type { Client, TextChannel } from "discord.js";
 import { getPreferencesService } from "./services/user-preferences";
 import { getGeneratorService } from "./services/brief-generator";
 import { getFormatterService } from "./services/brief-formatter";
-import type { BriefPreferences } from "./services/user-preferences";
 
 /**
  * Scheduled job entry

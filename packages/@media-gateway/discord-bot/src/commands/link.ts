@@ -6,9 +6,6 @@ import {
   SlashCommandBuilder,
   CommandInteraction,
   EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
 } from "discord.js";
 import { UserLinkService } from "../services/user-link";
 import { PostgreSQLConnectionPool } from "@media-gateway/database";

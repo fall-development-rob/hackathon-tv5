@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import { z } from "zod";
 import type { Command } from "./index";
+import { createMediaGatewayAgent, MediaGatewayAgent } from "../mcp-client";
 
 /**
  * Brief options schema
@@ -12,6 +13,19 @@ import type { Command } from "./index";
 const BriefOptionsSchema = z.object({
   type: z.enum(["daily", "weekly", "trending"]).default("daily"),
 });
+
+// Singleton agent instance
+let agent: MediaGatewayAgent | null = null;
+
+function getAgent(): MediaGatewayAgent {
+  if (!agent) {
+    const apiKey = process.env.ANTHROPIC_API_KEY || "";
+    const apiBaseUrl =
+      process.env.MEDIA_GATEWAY_API_URL || "http://localhost:3001/v1";
+    agent = createMediaGatewayAgent(apiKey, { apiBaseUrl });
+  }
+  return agent;
+}
 
 /**
  * /brief command - Get your personalized content brief
@@ -49,8 +63,8 @@ export const briefCommand: Command = {
         type: interaction.options.getString("type") || "daily",
       });
 
-      // TODO: Integrate with Media Gateway API and user preferences
-      // For now, return a placeholder response
+      const mcpAgent = getAgent();
+      const userId = interaction.user.id;
 
       const briefTitles = {
         daily: "📅 Your Daily Content Brief",
@@ -66,58 +80,133 @@ export const briefCommand: Command = {
         )
         .setTimestamp();
 
-      // Different content based on brief type
-      if (options.type === "daily") {
-        embed.addFields(
-          {
-            name: "🎬 New Releases",
-            value:
-              "• **The Last of Us S2** - Episode 3 is now available\n• **Dune: Part Three** - Trailer released",
+      // Fetch real data based on brief type
+      if (options.type === "daily" || options.type === "weekly") {
+        // Get personalized recommendations
+        const recommendations = await mcpAgent.getRecommendations(userId, {
+          limit: 5,
+        });
+        const trending = await mcpAgent.getTrending(3);
+
+        if (options.type === "daily") {
+          // Format trending as "New Releases"
+          const newReleases =
+            trending.length > 0
+              ? trending
+                  .map(
+                    (item) =>
+                      `• **${item.title}** - ${item.description?.substring(0, 50) || "Trending now"}...`,
+                  )
+                  .join("\n")
+              : "• No new releases today. Check back tomorrow!";
+
+          embed.addFields({
+            name: "🎬 Trending Now",
+            value: newReleases,
             inline: false,
-          },
-          {
+          });
+
+          // Format recommendations
+          const recList =
+            recommendations.length > 0
+              ? recommendations
+                  .slice(0, 3)
+                  .map(
+                    (rec) =>
+                      `• **${rec.title}** - ${rec.genre?.slice(0, 2).join(", ") || "Recommended for you"}`,
+                  )
+                  .join("\n")
+              : "• Link your account with `/link` to get personalized recommendations!";
+
+          embed.addFields({
             name: "⭐ Recommended for You",
-            value:
-              "• **Severance** - Based on your love for sci-fi thrillers\n• **The Bear** - Continues your culinary drama interest",
+            value: recList,
             inline: false,
-          },
-          {
-            name: "⏰ Continue Watching",
+          });
+
+          embed.addFields({
+            name: "💡 Quick Actions",
             value:
-              "• **Breaking Bad** - S3E7 (42 min left)\n• **The Office** - S5E12",
+              "• Use `/search` to find specific content\n• Use `/recommend` for more suggestions\n• Use `/mylist` to manage your watchlist",
             inline: false,
-          },
-        );
-      } else if (options.type === "weekly") {
-        embed.addFields(
-          {
+          });
+        } else {
+          // Weekly digest
+          embed.addFields({
             name: "📈 This Week's Highlights",
-            value:
-              "• 12 new episodes added to your watchlist\n• 3 movies matching your preferences released\n• 5 shows you follow returned with new seasons",
+            value: `• ${trending.length} trending titles this week\n• ${recommendations.length} new recommendations based on your preferences`,
             inline: false,
-          },
-          {
-            name: "🎯 Completion Progress",
-            value:
-              "• Finished 3 series this week 🎉\n• 45% through your current watchlist",
-            inline: false,
-          },
-        );
-      } else if (options.type === "trending") {
-        embed.addFields(
-          {
+          });
+
+          if (recommendations.length > 0) {
+            const topPicks = recommendations
+              .slice(0, 3)
+              .map(
+                (rec, i) =>
+                  `${i + 1}. **${rec.title}** (${rec.mediaType === "movie" ? "🎬" : "📺"}) - ${rec.rating ? `⭐ ${rec.rating.toFixed(1)}` : ""}`,
+              )
+              .join("\n");
+
+            embed.addFields({
+              name: "🎯 Top Picks for You",
+              value: topPicks,
+              inline: false,
+            });
+          }
+        }
+      } else {
+        // Trending view
+        const trending = await mcpAgent.getTrending(10);
+
+        if (trending.length > 0) {
+          const trendingList = trending
+            .slice(0, 5)
+            .map((item, i) => {
+              const medal =
+                i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+              const typeIcon = item.mediaType === "movie" ? "🎬" : "📺";
+              return `${medal} **${item.title}** ${typeIcon} - ${item.description?.substring(0, 40) || ""}...`;
+            })
+            .join("\n");
+
+          embed.addFields({
             name: "🔥 Top Trending",
-            value:
-              "1. **The Last of Us** - Post-apocalyptic drama\n2. **Wednesday** - Addams Family spinoff\n3. **The Mandalorian** - Star Wars series",
+            value: trendingList,
             inline: false,
-          },
-          {
-            name: "💬 Most Discussed",
+          });
+
+          // Add genre breakdown
+          const genres = trending.reduce(
+            (acc, item) => {
+              item.genre?.forEach((g) => {
+                acc[g] = (acc[g] || 0) + 1;
+              });
+              return acc;
+            },
+            {} as Record<string, number>,
+          );
+
+          const topGenres = Object.entries(genres)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([genre]) => genre)
+            .join(", ");
+
+          if (topGenres) {
+            embed.addFields({
+              name: "📊 Hot Genres",
+              value: topGenres || "Various genres trending",
+              inline: false,
+            });
+          }
+        } else {
+          embed.addFields({
+            name: "🔥 Trending",
             value:
-              "• **Succession** finale reactions\n• **Barbie** movie debate continues\n• **Oppenheimer** critical analysis",
+              "No trending content available at the moment. Check back later!",
             inline: false,
-          },
-        );
+          });
+        }
       }
 
       embed.setFooter({
@@ -131,7 +220,7 @@ export const briefCommand: Command = {
       const errorMessage =
         error instanceof z.ZodError
           ? `Invalid options: ${error.errors.map((e) => e.message).join(", ")}`
-          : "An error occurred while fetching your brief.";
+          : "An error occurred while fetching your brief. Please try again later.";
 
       await interaction.editReply({ content: errorMessage });
     }

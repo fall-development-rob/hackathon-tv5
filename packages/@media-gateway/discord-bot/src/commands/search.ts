@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import { z } from "zod";
 import type { Command } from "./index";
+import { createMediaGatewayAgent, MediaGatewayAgent } from "../mcp-client";
 
 /**
  * Search request schema
@@ -14,6 +15,19 @@ const SearchOptionsSchema = z.object({
   type: z.enum(["movie", "tv", "all"]).default("all"),
   limit: z.number().min(1).max(10).default(5),
 });
+
+// Singleton agent instance
+let agent: MediaGatewayAgent | null = null;
+
+function getAgent(): MediaGatewayAgent {
+  if (!agent) {
+    const apiKey = process.env.ANTHROPIC_API_KEY || "";
+    const apiBaseUrl =
+      process.env.MEDIA_GATEWAY_API_URL || "http://localhost:3001/v1";
+    agent = createMediaGatewayAgent(apiKey, { apiBaseUrl });
+  }
+  return agent;
+}
 
 /**
  * /search command - Search for movies and TV shows
@@ -63,8 +77,12 @@ export const searchCommand: Command = {
         limit: interaction.options.getInteger("limit") || 5,
       });
 
-      // TODO: Integrate with Media Gateway API
-      // For now, return a placeholder response
+      // Search using Media Gateway API
+      const mcpAgent = getAgent();
+      const searchResults = await mcpAgent.search(options.query, {
+        type: options.type === "all" ? undefined : options.type,
+        limit: options.limit,
+      });
 
       const embed = new EmbedBuilder()
         .setColor(0x5865f2)
@@ -74,20 +92,33 @@ export const searchCommand: Command = {
         )
         .setTimestamp();
 
-      // Placeholder search results
-      const results = [
-        "**The Matrix** (1999)\n📺 Movie • ⭐ 8.7/10\nA computer hacker learns about the true nature of reality.",
+      if (searchResults.length === 0) {
+        embed.addFields({
+          name: "No Results",
+          value: `No ${options.type === "all" ? "content" : options.type === "movie" ? "movies" : "TV shows"} found matching "${options.query}". Try different keywords or check spelling.`,
+          inline: false,
+        });
+      } else {
+        // Format search results
+        const formattedResults = searchResults.map((result, index) => {
+          const typeIcon = result.mediaType === "movie" ? "🎬" : "📺";
+          const rating = result.rating
+            ? `⭐ ${result.rating.toFixed(1)}/10`
+            : "";
+          const year = result.year ? `(${result.year})` : "";
+          const overview = result.description
+            ? result.description.substring(0, 100) +
+              (result.description.length > 100 ? "..." : "")
+            : "No description available";
+          return `**${index + 1}. ${result.title}** ${year}\n${typeIcon} ${result.mediaType === "movie" ? "Movie" : "TV Show"} • ${rating}\n${overview}`;
+        });
 
-        "**Inception** (2010)\n📺 Movie • ⭐ 8.8/10\nA thief who steals corporate secrets through dream-sharing technology.",
-
-        "**Interstellar** (2014)\n📺 Movie • ⭐ 8.6/10\nA team of explorers travel through a wormhole in space.",
-      ].slice(0, options.limit);
-
-      embed.addFields({
-        name: `📚 Found ${results.length} result(s)`,
-        value: results.join("\n\n"),
-        inline: false,
-      });
+        embed.addFields({
+          name: `📚 Found ${searchResults.length} result(s)`,
+          value: formattedResults.join("\n\n"),
+          inline: false,
+        });
+      }
 
       embed.setFooter({
         text: `Powered by Media Gateway • Requested by ${interaction.user.username}`,
@@ -100,7 +131,7 @@ export const searchCommand: Command = {
       const errorMessage =
         error instanceof z.ZodError
           ? `Invalid options: ${error.errors.map((e) => e.message).join(", ")}`
-          : "An error occurred while searching.";
+          : "An error occurred while searching. Please try again later.";
 
       await interaction.editReply({ content: errorMessage });
     }

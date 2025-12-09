@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import { z } from "zod";
 import type { Command } from "./index";
+import { createMediaGatewayAgent, MediaGatewayAgent } from "../mcp-client";
 
 /**
  * Recommendation request schema
@@ -14,6 +15,19 @@ const RecommendOptionsSchema = z.object({
   mood: z.string().optional(),
   limit: z.number().min(1).max(10).default(5),
 });
+
+// Singleton agent instance
+let agent: MediaGatewayAgent | null = null;
+
+function getAgent(): MediaGatewayAgent {
+  if (!agent) {
+    const apiKey = process.env.ANTHROPIC_API_KEY || "";
+    const apiBaseUrl =
+      process.env.MEDIA_GATEWAY_API_URL || "http://localhost:3001/v1";
+    agent = createMediaGatewayAgent(apiKey, { apiBaseUrl });
+  }
+  return agent;
+}
 
 /**
  * /recommend command - Get AI-powered content recommendations
@@ -63,8 +77,16 @@ export const recommendCommand: Command = {
         limit: interaction.options.getInteger("limit") || 5,
       });
 
-      // TODO: Integrate with Media Gateway API and Anthropic AI
-      // For now, return a placeholder response
+      // Get recommendations from Media Gateway API
+      const mcpAgent = getAgent();
+
+      // Use Discord user ID as the user identifier for personalization
+      const userId = interaction.user.id;
+
+      const recommendations = await mcpAgent.getRecommendations(userId, {
+        limit: options.limit,
+        genre: options.genre,
+      });
 
       const embed = new EmbedBuilder()
         .setColor(0x5865f2)
@@ -85,18 +107,33 @@ export const recommendCommand: Command = {
         });
       }
 
-      // Placeholder recommendations
-      const recommendations = [
-        "1. **The Matrix** (Sci-Fi) - A mind-bending journey into virtual reality",
-        "2. **Inception** (Thriller) - Dreams within dreams",
-        "3. **Interstellar** (Sci-Fi) - Space exploration epic",
-      ].slice(0, options.limit);
+      if (recommendations.length === 0) {
+        embed.addFields({
+          name: "📺 Recommendations",
+          value:
+            "No recommendations found matching your criteria. Try adjusting your filters or explore trending content with `/brief type:trending`.",
+          inline: false,
+        });
+      } else {
+        // Format recommendations
+        const formattedRecs = recommendations.map((rec, index) => {
+          const typeIcon = rec.mediaType === "movie" ? "🎬" : "📺";
+          const rating = rec.rating ? `⭐ ${rec.rating.toFixed(1)}/10` : "";
+          const year = rec.year ? `(${rec.year})` : "";
+          const genres = rec.genre?.slice(0, 2).join(", ") || "Unknown";
+          const overview = rec.description
+            ? rec.description.substring(0, 80) +
+              (rec.description.length > 80 ? "..." : "")
+            : "";
+          return `**${index + 1}. ${rec.title}** ${year}\n${typeIcon} ${genres} • ${rating}\n${overview}`;
+        });
 
-      embed.addFields({
-        name: "📺 Recommendations",
-        value: recommendations.join("\n\n"),
-        inline: false,
-      });
+        embed.addFields({
+          name: `📺 ${recommendations.length} Recommendation(s)`,
+          value: formattedRecs.join("\n\n"),
+          inline: false,
+        });
+      }
 
       embed.setFooter({
         text: `Powered by Media Gateway AI • Requested by ${interaction.user.username}`,
@@ -109,7 +146,7 @@ export const recommendCommand: Command = {
       const errorMessage =
         error instanceof z.ZodError
           ? `Invalid options: ${error.errors.map((e) => e.message).join(", ")}`
-          : "An error occurred while fetching recommendations.";
+          : "An error occurred while fetching recommendations. Please try again later.";
 
       await interaction.editReply({ content: errorMessage });
     }

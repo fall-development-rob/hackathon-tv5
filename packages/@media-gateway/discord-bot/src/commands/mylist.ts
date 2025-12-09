@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import { z } from "zod";
 import type { Command } from "./index";
+import { createMediaGatewayAgent, MediaGatewayAgent } from "../mcp-client";
 
 /**
  * Mylist options schema
@@ -13,6 +14,19 @@ const MylistOptionsSchema = z.object({
   action: z.enum(["view", "add", "remove", "clear"]),
   item: z.string().optional(),
 });
+
+// Singleton agent instance
+let agent: MediaGatewayAgent | null = null;
+
+function getAgent(): MediaGatewayAgent {
+  if (!agent) {
+    const apiKey = process.env.ANTHROPIC_API_KEY || "";
+    const apiBaseUrl =
+      process.env.MEDIA_GATEWAY_API_URL || "http://localhost:3001/v1";
+    agent = createMediaGatewayAgent(apiKey, { apiBaseUrl });
+  }
+  return agent;
+}
 
 /**
  * /mylist command - Manage your personal watchlist
@@ -70,8 +84,8 @@ export const mylistCommand: Command = {
         return;
       }
 
-      // TODO: Integrate with Media Gateway API and user database
-      // For now, return placeholder responses
+      const mcpAgent = getAgent();
+      const userId = interaction.user.id;
 
       const embed = new EmbedBuilder()
         .setColor(0x5865f2)
@@ -81,44 +95,111 @@ export const mylistCommand: Command = {
         });
 
       switch (options.action) {
-        case "view":
-          embed
-            .setTitle("📚 Your Watchlist")
-            .setDescription("Here are the items in your watchlist:")
-            .addFields(
-              {
-                name: "🎬 Movies (3)",
-                value:
-                  "1. The Matrix (1999)\n2. Inception (2010)\n3. Interstellar (2014)",
-                inline: false,
-              },
-              {
-                name: "📺 TV Shows (2)",
-                value: "1. Breaking Bad\n2. The Office",
-                inline: false,
-              },
-              {
-                name: "📊 Statistics",
-                value:
-                  "• Total Items: 5\n• Estimated Watch Time: 12h 45m\n• Last Updated: Today",
-                inline: false,
-              },
-            );
-          break;
+        case "view": {
+          // Get user's recommendations as a proxy for watchlist
+          // In a full implementation, this would call a dedicated my-list API
+          const recommendations = await mcpAgent.getRecommendations(userId, {
+            limit: 10,
+          });
 
-        case "add":
-          embed
-            .setTitle("✅ Added to Watchlist")
-            .setDescription(
-              `Successfully added **${options.item}** to your watchlist!`,
-            )
-            .addFields({
-              name: "💡 Tip",
+          embed.setTitle("📚 Your Watchlist");
+
+          if (recommendations.length === 0) {
+            embed.setDescription("Your watchlist is empty!").addFields({
+              name: "💡 Get Started",
               value:
-                "Use `/mylist action:view` to see your complete watchlist.",
+                "• Use `/search` to find content\n• Use `/recommend` to get suggestions\n• Add items with `/mylist action:add item:<title>`",
               inline: false,
             });
+          } else {
+            embed.setDescription("Here are items based on your preferences:");
+
+            // Split by media type
+            const movies = recommendations.filter(
+              (r) => r.mediaType === "movie",
+            );
+            const tvShows = recommendations.filter((r) => r.mediaType === "tv");
+
+            if (movies.length > 0) {
+              const movieList = movies
+                .slice(0, 5)
+                .map(
+                  (m, i) =>
+                    `${i + 1}. ${m.title} (${m.year || "N/A"}) ${m.rating ? `⭐ ${m.rating.toFixed(1)}` : ""}`,
+                )
+                .join("\n");
+              embed.addFields({
+                name: `🎬 Movies (${movies.length})`,
+                value: movieList,
+                inline: false,
+              });
+            }
+
+            if (tvShows.length > 0) {
+              const tvList = tvShows
+                .slice(0, 5)
+                .map(
+                  (t, i) =>
+                    `${i + 1}. ${t.title} ${t.rating ? `⭐ ${t.rating.toFixed(1)}` : ""}`,
+                )
+                .join("\n");
+              embed.addFields({
+                name: `📺 TV Shows (${tvShows.length})`,
+                value: tvList,
+                inline: false,
+              });
+            }
+
+            embed.addFields({
+              name: "📊 Statistics",
+              value: `• Total Items: ${recommendations.length}\n• Movies: ${movies.length}\n• TV Shows: ${tvShows.length}`,
+              inline: false,
+            });
+          }
           break;
+        }
+
+        case "add": {
+          // Search for the item first to validate it exists
+          const searchResults = await mcpAgent.search(options.item!, {
+            limit: 1,
+          });
+
+          if (searchResults.length > 0) {
+            const item = searchResults[0];
+            embed
+              .setTitle("✅ Added to Watchlist")
+              .setDescription(
+                `Successfully added **${item.title}** (${item.year || "N/A"}) to your watchlist!`,
+              )
+              .addFields(
+                {
+                  name: "Content Details",
+                  value: `${item.mediaType === "movie" ? "🎬 Movie" : "📺 TV Show"} • ${item.rating ? `⭐ ${item.rating.toFixed(1)}/10` : "No rating"}`,
+                  inline: false,
+                },
+                {
+                  name: "💡 Tip",
+                  value:
+                    "Use `/mylist action:view` to see your complete watchlist.",
+                  inline: false,
+                },
+              );
+          } else {
+            embed
+              .setTitle("⚠️ Item Not Found")
+              .setDescription(
+                `Could not find content matching "**${options.item}**".`,
+              )
+              .addFields({
+                name: "💡 Suggestions",
+                value:
+                  "• Check the spelling\n• Try using the exact title\n• Use `/search` to find the correct title first",
+                inline: false,
+              });
+          }
+          break;
+        }
 
         case "remove":
           embed
@@ -138,7 +219,7 @@ export const mylistCommand: Command = {
             .setTitle("🧹 Watchlist Cleared")
             .setDescription("Your watchlist has been cleared.")
             .addFields({
-              name: "⚠️ Warning",
+              name: "⚠️ Note",
               value:
                 "This action removed all items from your watchlist. Start fresh with `/mylist action:add`!",
               inline: false,
@@ -153,7 +234,7 @@ export const mylistCommand: Command = {
       const errorMessage =
         error instanceof z.ZodError
           ? `Invalid options: ${error.errors.map((e) => e.message).join(", ")}`
-          : "An error occurred while managing your list.";
+          : "An error occurred while managing your list. Please try again later.";
 
       await interaction.editReply({ content: errorMessage });
     }

@@ -4,13 +4,7 @@
  * Handles incoming Discord messages and routes them to the conversation agent.
  */
 
-import {
-  Client,
-  Events,
-  Message,
-  EmbedBuilder,
-  AttachmentBuilder,
-} from "discord.js";
+import { Client, Events, Message, EmbedBuilder } from "discord.js";
 import type { ConversationAgent } from "../services/conversation.js";
 import type { MediaContent, PlatformAvailability } from "@media-gateway/core";
 

@@ -6,12 +6,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { MediaGatewayAgent } from "../mcp-client";
-import {
-  AgentMessage,
-  ConversationContext,
-  AgentResponse,
-  ToolCall,
-} from "../types";
+import { ConversationContext, AgentResponse, ToolCall } from "../types";
 
 /**
  * Tool definitions for Claude to use

@@ -5,14 +5,16 @@
 
 import { PostgreSQLConnectionPool } from "@media-gateway/database";
 import {
-  DiscordUserLink,
   OneTimeLinkCode,
   LinkResult,
   UnlinkResult,
   UserProfile,
   UserLinkPreferences,
 } from "../types/user-link";
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual, scrypt } from "crypto";
+import { promisify } from "util";
+
+const scryptAsync = promisify(scrypt);
 
 export class UserLinkService {
   constructor(private pool: PostgreSQLConnectionPool) {}
@@ -244,13 +246,18 @@ export class UserLinkService {
 
       const row = result.rows[0];
 
+      // Get user's subscription platforms from user_subscriptions table
+      const subscriptionPlatforms = await this.getUserSubscriptionPlatforms(
+        row.user_id,
+      );
+
       return {
         user_id: row.user_id,
         discord_id: row.discord_id,
         username: row.username,
         email: row.email,
         my_list_count: parseInt(row.my_list_count) || 0,
-        subscription_platforms: [], // TODO: Implement subscription platforms
+        subscription_platforms: subscriptionPlatforms,
         preferences:
           typeof row.preferences === "string"
             ? JSON.parse(row.preferences)
@@ -378,8 +385,6 @@ export class UserLinkService {
     password: string,
   ): Promise<{ success: boolean; user_id?: string; error?: string }> {
     try {
-      // Note: In production, use proper password hashing (bcrypt, argon2, etc.)
-      // For hackathon, simplified authentication
       const result = await this.pool.query<{
         id: string;
         password_hash: string;
@@ -392,9 +397,17 @@ export class UserLinkService {
         };
       }
 
-      // TODO: Implement proper password verification
-      // For now, assume password is correct if user exists
-      // In production: const isValid = await bcrypt.compare(password, result.rows[0].password_hash);
+      const storedHash = result.rows[0].password_hash;
+
+      // Verify password using scrypt (same algorithm used for hashing)
+      const isValid = await this.verifyPassword(password, storedHash);
+
+      if (!isValid) {
+        return {
+          success: false,
+          error: "INVALID_PASSWORD",
+        };
+      }
 
       return {
         success: true,
@@ -405,6 +418,73 @@ export class UserLinkService {
         success: false,
         error: error.message,
       };
+    }
+  }
+
+  /**
+   * Verify password against stored hash using scrypt
+   * @param password - Plain text password
+   * @param storedHash - Stored hash in format "salt:hash"
+   * @returns true if password matches
+   */
+  private async verifyPassword(
+    password: string,
+    storedHash: string,
+  ): Promise<boolean> {
+    try {
+      // Handle different hash formats
+      if (storedHash.includes(":")) {
+        // Format: salt:hash (scrypt)
+        const [salt, hash] = storedHash.split(":");
+        const saltBuffer = Buffer.from(salt, "hex");
+        const hashBuffer = Buffer.from(hash, "hex");
+
+        const derivedKey = (await scryptAsync(
+          password,
+          saltBuffer,
+          64,
+        )) as Buffer;
+
+        return timingSafeEqual(derivedKey, hashBuffer);
+      } else if (storedHash.startsWith("$2")) {
+        // bcrypt format - for backwards compatibility, compare directly
+        // In production, you'd use bcrypt.compare here
+        // For hackathon, we'll do a simple comparison if bcrypt is detected
+        console.warn("bcrypt hash detected - using fallback comparison");
+        return false; // bcrypt needs its own library
+      } else {
+        // Plain text comparison (legacy, not recommended)
+        console.warn("Plain text password comparison detected - not secure!");
+        return password === storedHash;
+      }
+    } catch (error) {
+      console.error("Password verification error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Get user's subscription platforms
+   * @param userId - Media Gateway user_id
+   * @returns Array of platform names
+   */
+  private async getUserSubscriptionPlatforms(
+    userId: string,
+  ): Promise<string[]> {
+    try {
+      const result = await this.pool.query<{ platform_name: string }>(
+        `SELECT DISTINCT p.name as platform_name
+         FROM user_subscriptions us
+         INNER JOIN platforms p ON p.id = us.platform_id
+         WHERE us.user_id = $1 AND us.active = true`,
+        [userId],
+      );
+
+      return result.rows.map((row) => row.platform_name);
+    } catch (error) {
+      // Table might not exist yet, return empty array
+      console.warn("Could not fetch subscription platforms:", error);
+      return [];
     }
   }
 
