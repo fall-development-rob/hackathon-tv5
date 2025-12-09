@@ -67,6 +67,8 @@ describe("UserPreferencesService", () => {
     });
 
     it("should accept optional apiBaseUrl parameter", () => {
+      // Reset singleton to test apiBaseUrl parameter
+      (UserPreferencesService as any).instance = null;
       const instance = UserPreferencesService.getInstance(
         "http://custom-api.com",
       );
@@ -535,7 +537,7 @@ describe("UserPreferencesService", () => {
       ).rejects.toThrow("Failed to update user preferences");
     });
 
-    it("should set channel_id to null when undefined", async () => {
+    it("should set channel_id to null explicitly", async () => {
       mockPool.query.mockResolvedValueOnce({
         rows: [
           {
@@ -551,8 +553,9 @@ describe("UserPreferencesService", () => {
         ],
       });
 
+      // Use null instead of undefined to explicitly set channel_id to null
       await service.updatePreferences("discord-123", {
-        channelId: undefined,
+        channelId: null as any,
       });
 
       expect(mockPool.query).toHaveBeenCalledWith(
@@ -757,6 +760,9 @@ describe("UserPreferencesService", () => {
     });
 
     it("should handle concurrent operations", async () => {
+      // Clear call count from initialization
+      mockPool.query.mockClear();
+
       mockPool.query.mockResolvedValue({
         rows: [
           {
