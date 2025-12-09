@@ -1,9 +1,10 @@
-import { Router } from 'express';
-import type { Router as IRouter } from 'express';
-import { asyncHandler, ApiError } from '../middleware/errorHandler';
-import { validateParams, validateQuery } from '../middleware/validation';
-import { ContentIdSchema, AvailabilityQuerySchema } from '../schemas';
-import { z } from 'zod';
+import { Router } from "express";
+import type { Router as IRouter } from "express";
+import { asyncHandler } from "../middleware/errorHandler";
+import { validateParams, validateQuery } from "../middleware/validation";
+import { AvailabilityQuerySchema } from "../schemas";
+import { z } from "zod";
+import { getMediaGatewayService } from "../services/MediaGatewayService";
 
 const router: IRouter = Router();
 
@@ -56,87 +57,89 @@ interface AvailabilityQueryParams {
  *         description: Content not found
  */
 router.get(
-  '/:contentId',
+  "/:contentId",
   validateParams(z.object({ contentId: z.string().min(1) })),
   validateQuery(AvailabilityQuerySchema),
   asyncHandler(async (req, res) => {
     const { contentId } = req.params;
-    const { region } = req.query as AvailabilityQueryParams;
+    const { region = "US" } = req.query as AvailabilityQueryParams;
 
-    // TODO: Integrate with SwarmCoordinator for real-time availability checks
-    const platforms = [
-      {
-        platform: 'Netflix',
-        platformId: 'netflix',
-        type: 'subscription',
-        deepLink: `https://netflix.com/watch/${contentId}`,
-        price: null,
-        quality: ['HD', '4K', 'HDR'],
-        available: true,
-        availableUntil: null,
-      },
-      {
-        platform: 'Amazon Prime Video',
-        platformId: 'amazon-prime',
-        type: 'subscription',
-        deepLink: `https://amazon.com/gp/video/detail/${contentId}`,
-        price: null,
-        quality: ['HD', '4K'],
-        available: true,
-        availableUntil: null,
-      },
-      {
-        platform: 'Amazon Prime Video',
-        platformId: 'amazon-prime',
-        type: 'rent',
-        deepLink: `https://amazon.com/gp/video/detail/${contentId}?mode=rent`,
-        price: {
-          amount: 3.99,
-          currency: 'USD',
-          rentalPeriod: '48 hours',
-        },
-        quality: ['HD', '4K'],
-        available: true,
-        availableUntil: null,
-      },
-      {
-        platform: 'Apple TV',
-        platformId: 'apple-tv',
-        type: 'buy',
-        deepLink: `https://tv.apple.com/movie/${contentId}`,
-        price: {
-          amount: 14.99,
-          currency: 'USD',
-        },
-        quality: ['HD', '4K', 'Dolby Vision'],
-        available: true,
-        availableUntil: null,
-      },
-      {
-        platform: 'Disney+',
-        platformId: 'disney-plus',
-        type: 'subscription',
-        deepLink: `https://disneyplus.com/movies/${contentId}`,
-        price: null,
-        quality: ['HD', '4K', 'IMAX Enhanced'],
-        available: true,
-        availableUntil: '2025-06-30',
-      },
-    ];
+    // Use MediaGatewayService for availability (integrates TMDB watch providers)
+    const service = getMediaGatewayService();
+    const availability = await service.getAvailability(contentId, region);
+
+    // Enrich platforms with additional data
+    const enrichedPlatforms = availability.platforms.map((p) => ({
+      platform: p.platform,
+      platformId: p.platform.toLowerCase().replace(/\s+/g, "-"),
+      type: p.type,
+      deepLink: p.deepLink || generateDeepLink(p.platform, contentId),
+      price: p.price
+        ? {
+            amount: p.price.amount,
+            currency: p.price.currency,
+            ...(p.type === "rent" ? { rentalPeriod: "48 hours" } : {}),
+          }
+        : null,
+      quality: getQualityOptions(p.platform),
+      available: true,
+      availableUntil: null,
+    }));
 
     res.json({
-      contentId,
-      region,
-      platforms,
+      contentId: availability.contentId,
+      region: availability.region,
+      platforms: enrichedPlatforms,
       lastUpdated: new Date().toISOString(),
       metadata: {
-        totalPlatforms: platforms.length,
-        subscriptionOptions: platforms.filter(p => p.type === 'subscription').length,
-        rentOptions: platforms.filter(p => p.type === 'rent').length,
-        buyOptions: platforms.filter(p => p.type === 'buy').length,
+        totalPlatforms: enrichedPlatforms.length,
+        subscriptionOptions: enrichedPlatforms.filter(
+          (p) => p.type === "subscription",
+        ).length,
+        rentOptions: enrichedPlatforms.filter((p) => p.type === "rent").length,
+        buyOptions: enrichedPlatforms.filter((p) => p.type === "buy").length,
+        freeOptions: enrichedPlatforms.filter((p) => p.type === "free").length,
+        serviceStatus: service.getStatus(),
       },
     });
-  })
+  }),
 );
+
+/**
+ * Generate deep link for platform
+ */
+function generateDeepLink(platform: string, contentId: string): string {
+  const platformLinks: Record<string, string> = {
+    Netflix: `https://netflix.com/watch/${contentId}`,
+    "Amazon Prime Video": `https://amazon.com/gp/video/detail/${contentId}`,
+    "Disney+": `https://disneyplus.com/movies/${contentId}`,
+    "Apple TV": `https://tv.apple.com/movie/${contentId}`,
+    Hulu: `https://hulu.com/watch/${contentId}`,
+    "HBO Max": `https://max.com/movies/${contentId}`,
+    "Paramount+": `https://paramountplus.com/movies/${contentId}`,
+    Peacock: `https://peacocktv.com/watch/${contentId}`,
+  };
+  return (
+    platformLinks[platform] ||
+    `https://streaming.example.com/watch/${contentId}`
+  );
+}
+
+/**
+ * Get quality options for platform
+ */
+function getQualityOptions(platform: string): string[] {
+  const qualityMap: Record<string, string[]> = {
+    Netflix: ["HD", "4K", "HDR", "Dolby Atmos"],
+    "Amazon Prime Video": ["HD", "4K", "HDR10+"],
+    "Disney+": ["HD", "4K", "IMAX Enhanced", "Dolby Vision"],
+    "Apple TV": ["HD", "4K", "Dolby Vision", "Dolby Atmos"],
+    "HBO Max": ["HD", "4K", "Dolby Vision"],
+    Hulu: ["HD", "4K"],
+    "Paramount+": ["HD", "4K", "Dolby Vision"],
+    Peacock: ["HD", "4K"],
+  };
+  return qualityMap[platform] || ["HD"];
+}
 
 export default router;

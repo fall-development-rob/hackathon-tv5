@@ -7,13 +7,13 @@
 // Authentication Types (SPARC NFR-4.1)
 // ============================================================================
 
-export * from './auth.js';
+export * from "./auth.js";
 
 // ============================================================================
 // Media Content Types
 // ============================================================================
 
-export type MediaType = 'movie' | 'tv';
+export type MediaType = "movie" | "tv";
 
 export interface MediaContent {
   id: number;
@@ -117,7 +117,7 @@ export interface ConnectedPlatform {
   userId: string;
   connectedAt: Date;
   lastSyncAt: Date;
-  subscriptionStatus: 'active' | 'expired' | 'unknown';
+  subscriptionStatus: "active" | "expired" | "unknown";
 }
 
 // ============================================================================
@@ -190,9 +190,10 @@ export interface PlatformAvailability {
   platformId: string;
   platformName: string;
   available: boolean;
-  type: 'subscription' | 'rent' | 'buy' | 'free';
+  type: "subscription" | "rent" | "buy" | "free";
   price?: number;
   deepLink?: string;
+  logoPath?: string;
 }
 
 export interface RecommendationRequest {
@@ -232,7 +233,7 @@ export interface Group {
 export interface GroupSession {
   id: string;
   groupId: string;
-  status: 'voting' | 'decided' | 'watching' | 'completed';
+  status: "voting" | "decided" | "watching" | "completed";
   initiatorId: string;
   context: RecommendationContext;
   candidates: GroupCandidate[];
@@ -283,12 +284,12 @@ export interface PlatformContentMatch {
 // ============================================================================
 
 export type AgentIntent =
-  | { type: 'search'; query: string; filters?: SearchFilters }
-  | { type: 'recommendation'; context?: RecommendationContext }
-  | { type: 'group_watch'; groupId: string }
-  | { type: 'availability_check'; contentId: number; mediaType: MediaType }
-  | { type: 'explain'; contentId: number }
-  | { type: 'unknown'; rawQuery: string };
+  | { type: "search"; query: string; filters?: SearchFilters }
+  | { type: "recommendation"; context?: RecommendationContext }
+  | { type: "group_watch"; groupId: string }
+  | { type: "availability_check"; contentId: number; mediaType: MediaType }
+  | { type: "explain"; contentId: number }
+  | { type: "unknown"; rawQuery: string };
 
 export interface AgentContext {
   userId?: string;
@@ -298,7 +299,7 @@ export interface AgentContext {
 }
 
 export interface ConversationTurn {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: Date;
   intent?: AgentIntent;

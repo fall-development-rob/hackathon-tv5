@@ -1,9 +1,10 @@
-import { Router } from 'express';
-import type { Router as IRouter } from 'express';
-import { asyncHandler } from '../middleware/errorHandler';
-import { validateQuery } from '../middleware/validation';
-import { searchRateLimit } from '../middleware/rateLimit';
-import { SearchQuerySchema } from '../schemas';
+import { Router } from "express";
+import type { Router as IRouter } from "express";
+import { asyncHandler } from "../middleware/errorHandler";
+import { validateQuery } from "../middleware/validation";
+import { searchRateLimit } from "../middleware/rateLimit";
+import { SearchQuerySchema } from "../schemas";
+import { getMediaGatewayService } from "../services/MediaGatewayService";
 
 const router: IRouter = Router();
 
@@ -12,7 +13,7 @@ const router: IRouter = Router();
  */
 interface SearchQueryParams {
   q: string;
-  mediaType?: string;
+  mediaType?: "movie" | "tv" | "all";
   genre?: string;
   year?: number;
   rating?: number;
@@ -96,48 +97,101 @@ interface SearchQueryParams {
  *         description: Rate limit exceeded
  */
 router.get(
-  '/',
+  "/",
   searchRateLimit,
   validateQuery(SearchQuerySchema),
   asyncHandler(async (req, res) => {
-    const { q, mediaType, genre, year, rating, limit, offset } = req.query as unknown as SearchQueryParams;
+    const {
+      q,
+      mediaType,
+      genre,
+      year,
+      rating,
+      limit = 20,
+      offset = 0,
+    } = req.query as unknown as SearchQueryParams;
 
-    // TODO: Integrate with SwarmCoordinator for intelligent search
-    // This is a placeholder implementation
-    const results = [
-      {
-        id: 'content-1',
-        title: 'Example Movie',
-        mediaType: 'movie',
-        year: 2024,
-        genre: ['Action', 'Thriller'],
-        rating: 8.5,
-        description: 'An example movie matching your search',
-        availability: [
-          {
-            platform: 'Netflix',
-            region: 'US',
-            type: 'subscription',
-            deepLink: 'https://netflix.com/watch/...',
-          },
-        ],
-      },
-    ];
+    // Use MediaGatewayService for search (integrates TMDB, RuVector, etc.)
+    const service = getMediaGatewayService();
+    const { results, pagination, source } = await service.search(q, {
+      mediaType: mediaType as "movie" | "tv" | "all",
+      genre,
+      year,
+      rating,
+      limit,
+      offset,
+    });
+
+    // Transform results to API response format
+    const transformedResults = results.map((item) => ({
+      id: `${item.mediaType}-${item.id}`,
+      title: item.title,
+      mediaType: item.mediaType,
+      year: item.releaseDate ? new Date(item.releaseDate).getFullYear() : null,
+      genre: item.genreIds?.map((id) => getGenreName(id)) || [],
+      rating: item.voteAverage,
+      description: item.overview,
+      posterPath: item.posterPath,
+      popularity: item.popularity,
+    }));
+
+    // Get availability for each result
+    const resultsWithAvailability = await Promise.all(
+      transformedResults.map(async (item) => {
+        const availability = await service.getAvailability(item.id);
+        return {
+          ...item,
+          availability: availability.platforms.map((p) => ({
+            platform: p.platform,
+            region: availability.region,
+            type: p.type,
+            price: p.price,
+            deepLink: p.deepLink,
+          })),
+        };
+      }),
+    );
 
     res.json({
-      results,
-      pagination: {
-        total: 1,
-        limit,
-        offset,
-        hasMore: false,
-      },
+      results: resultsWithAvailability,
+      pagination,
       query: {
         q,
         filters: { mediaType, genre, year, rating },
       },
+      meta: {
+        source, // 'tmdb' or 'fallback'
+        serviceStatus: service.getStatus(),
+      },
     });
-  })
+  }),
 );
+
+/**
+ * Genre ID to name mapping (TMDB)
+ */
+function getGenreName(id: number): string {
+  const genres: Record<number, string> = {
+    28: "Action",
+    12: "Adventure",
+    16: "Animation",
+    35: "Comedy",
+    80: "Crime",
+    99: "Documentary",
+    18: "Drama",
+    10751: "Family",
+    14: "Fantasy",
+    36: "History",
+    27: "Horror",
+    10402: "Music",
+    9648: "Mystery",
+    10749: "Romance",
+    878: "Sci-Fi",
+    53: "Thriller",
+    10752: "War",
+    37: "Western",
+  };
+  return genres[id] || "Unknown";
+}
 
 export default router;

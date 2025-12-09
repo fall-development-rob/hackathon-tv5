@@ -1,8 +1,9 @@
-import { Router } from 'express';
-import type { Router as IRouter } from 'express';
-import { asyncHandler } from '../middleware/errorHandler';
-import { validateQuery } from '../middleware/validation';
-import { RecommendationsQuerySchema } from '../schemas';
+import { Router } from "express";
+import type { Router as IRouter } from "express";
+import { asyncHandler } from "../middleware/errorHandler";
+import { validateQuery } from "../middleware/validation";
+import { RecommendationsQuerySchema } from "../schemas";
+import { getMediaGatewayService } from "../services/MediaGatewayService";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,30 @@ interface RecommendationsQueryParams {
   context?: string;
   limit?: number;
 }
+
+/**
+ * Genre ID to name mapping
+ */
+const GENRE_NAMES: Record<number, string> = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Sci-Fi",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+};
 
 /**
  * @openapi
@@ -67,48 +92,68 @@ interface RecommendationsQueryParams {
  *         description: Validation error
  */
 router.get(
-  '/',
+  "/",
   validateQuery(RecommendationsQuerySchema),
   asyncHandler(async (req, res) => {
-    const { userId, mood, context, limit } = req.query as unknown as RecommendationsQueryParams;
+    const {
+      userId,
+      mood,
+      context,
+      limit = 10,
+    } = req.query as unknown as RecommendationsQueryParams;
 
-    // TODO: Integrate with SwarmCoordinator for personalized recommendations
-    const recommendations = [
-      {
-        id: 'content-1',
-        title: 'Recommended Movie',
-        mediaType: 'movie',
-        year: 2024,
-        genre: ['Drama'],
-        rating: 9.0,
-        matchScore: 0.95,
-        reasoning: [
-          'Based on your viewing history',
-          'Similar to movies you rated highly',
-          `Matches your ${mood || 'current'} mood`,
-        ],
-        availability: [
-          {
-            platform: 'Amazon Prime',
-            region: 'US',
-            type: 'subscription',
-            deepLink: 'https://amazon.com/watch/...',
-          },
-        ],
-      },
-    ];
+    // Use MediaGatewayService for recommendations (integrates TMDB, HybridEngine, etc.)
+    const service = getMediaGatewayService();
+    const { recommendations, source } = await service.getRecommendations({
+      userId,
+      mood,
+      context,
+      limit,
+    });
+
+    // Transform to API response format
+    const transformedRecommendations = await Promise.all(
+      recommendations.map(async (item) => {
+        const availability = await service.getAvailability(
+          `${item.mediaType}-${item.id}`,
+        );
+        return {
+          id: `${item.mediaType}-${item.id}`,
+          title: item.title,
+          mediaType: item.mediaType,
+          year: item.releaseDate
+            ? new Date(item.releaseDate).getFullYear()
+            : null,
+          genre: item.genreIds?.map((id) => GENRE_NAMES[id] || "Unknown") || [],
+          rating: item.voteAverage,
+          posterPath: item.posterPath,
+          description: item.overview,
+          matchScore: item.matchScore,
+          reasoning: item.reasoning,
+          availability: availability.platforms.map((p) => ({
+            platform: p.platform,
+            region: availability.region,
+            type: p.type,
+            price: p.price,
+            deepLink: p.deepLink,
+          })),
+        };
+      }),
+    );
 
     res.json({
-      recommendations,
+      recommendations: transformedRecommendations,
       metadata: {
         userId,
         mood,
         context,
         generatedAt: new Date().toISOString(),
-        algorithm: 'collaborative-filtering-v2',
+        algorithm: source === "tmdb" ? "tmdb-trending-v1" : "hybrid-rrf-v2",
+        source,
+        serviceStatus: service.getStatus(),
       },
     });
-  })
+  }),
 );
 
 export default router;
