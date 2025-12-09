@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:3001/api/v1";
+const API_BASE = "http://localhost:3001/v1";
 
 // Default headers that will be used for all requests
 const defaultHeaders: Record<string, string> = {
